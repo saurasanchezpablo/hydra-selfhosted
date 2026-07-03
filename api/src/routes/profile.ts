@@ -361,9 +361,97 @@ export async function profileRoutes(app: FastifyInstance) {
     }
   );
 
-  app.get("/profile/games/collections", { preHandler: requireAuth }, async () => {
-    return [];
+  app.get("/profile/games/collections", { preHandler: requireAuth }, async (req) => {
+    const userId = (req as Req).userId;
+    const rows = db
+      .prepare("SELECT id, name FROM collections WHERE user_id = ? ORDER BY position ASC, created_at ASC")
+      .all(userId) as { id: string; name: string }[];
+
+    return rows.map((row) => {
+      const gamesCount = (
+        db
+          .prepare(
+            "SELECT COUNT(*) as cnt FROM games WHERE user_id = ? AND is_deleted = 0 AND json_array_length(collection_ids) > 0 AND EXISTS (SELECT 1 FROM json_each(collection_ids) WHERE value = ?)"
+          )
+          .get(userId, row.id) as { cnt: number }
+      ).cnt;
+      return { id: row.id, name: row.name, gamesCount };
+    });
   });
+
+  app.post(
+    "/profile/games/collections",
+    { preHandler: requireAuth },
+    async (
+      req: FastifyRequest<{ Body: { name: string } }>,
+      reply
+    ) => {
+      const userId = (req as Req).userId;
+      const { name } = req.body;
+
+      if (!name?.trim()) {
+        return reply.code(400).send({ error: "name required" });
+      }
+
+      const existing = db
+        .prepare("SELECT id FROM collections WHERE user_id = ? AND name = ?")
+        .get(userId, name.trim());
+
+      if (existing) {
+        return reply.code(409).send({ error: "collection-name-already-in-use" });
+      }
+
+      const id = crypto.randomUUID();
+      const position = (
+        db
+          .prepare("SELECT COALESCE(MAX(position) + 1, 0) as next FROM collections WHERE user_id = ?")
+          .get(userId) as { next: number }
+      ).next;
+
+      db.prepare(
+        "INSERT INTO collections (id, user_id, name, position) VALUES (?, ?, ?, ?)"
+      ).run(id, userId, name.trim(), position);
+
+      return { id, name: name.trim(), gamesCount: 0 };
+    }
+  );
+
+  app.delete(
+    "/profile/games/collections/:collectionId",
+    { preHandler: requireAuth },
+    async (req: FastifyRequest<{ Params: { collectionId: string } }>) => {
+      const userId = (req as Req).userId;
+      const { collectionId } = req.params;
+
+      db.prepare("DELETE FROM collections WHERE id = ? AND user_id = ?").run(
+        collectionId,
+        userId
+      );
+
+      // Remove this collection from all games that had it
+      const games = db
+        .prepare(
+          "SELECT id, collection_ids FROM games WHERE user_id = ? AND collection_ids != '[]'"
+        )
+        .all(userId) as { id: string; collection_ids: string }[];
+
+      const update = db.prepare(
+        "UPDATE games SET collection_ids = ? WHERE id = ?"
+      );
+      const tx = db.transaction(() => {
+        for (const g of games) {
+          const ids: string[] = JSON.parse(g.collection_ids || "[]");
+          const updated = ids.filter((id) => id !== collectionId);
+          if (updated.length !== ids.length) {
+            update.run(JSON.stringify(updated), g.id);
+          }
+        }
+      });
+      tx();
+
+      return {};
+    }
+  );
 
   app.delete(
     "/profile/games/:remoteId",

@@ -21,6 +21,16 @@ for (const col of ["steam_id", "steam_api_key", "accent_color", "custom_css"]) {
 try { db.exec(`ALTER TABLE games ADD COLUMN executable_path TEXT`); } catch {}
 try { db.exec(`ALTER TABLE games ADD COLUMN pinned_at INTEGER`); } catch {}
 try { db.exec(`ALTER TABLE games ADD COLUMN source TEXT NOT NULL DEFAULT 'launcher'`); } catch {}
+try {
+  db.exec(`CREATE TABLE IF NOT EXISTS collections (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    name TEXT NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    UNIQUE(user_id, name)
+  )`);
+} catch {}
 try { db.exec(`ALTER TABLE users ADD COLUMN show_recent_activity INTEGER NOT NULL DEFAULT 1`); } catch {}
 try { db.exec(`ALTER TABLE users ADD COLUMN show_library INTEGER NOT NULL DEFAULT 1`); } catch {}
 try { db.exec(`ALTER TABLE users ADD COLUMN profile_sections_order TEXT`); } catch {}
