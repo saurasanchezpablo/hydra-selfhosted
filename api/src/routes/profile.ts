@@ -12,6 +12,8 @@ interface DbUser {
   profile_image_url: string | null;
   background_image_url: string | null;
   bio: string;
+  steam_id: string | null;
+  steam_api_key: string | null;
 }
 
 interface DbGame {
@@ -181,19 +183,24 @@ export async function profileRoutes(app: FastifyInstance) {
       const userId = (req as Req).userId;
       const g = req.body as any;
       const id = crypto.randomUUID();
+      const now = Math.floor(Date.now() / 1000);
+      // createGame is called when a game session opens, so start a session
+      const sessionStartedAt = now;
       db.prepare(`
-        INSERT INTO games (id, user_id, object_id, shop, title, play_time_in_seconds, last_time_played, is_favorite, is_pinned)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0)
+        INSERT INTO games (id, user_id, object_id, shop, title, play_time_in_seconds, last_time_played, is_favorite, is_pinned, session_started_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
         ON CONFLICT(user_id, object_id, shop) DO UPDATE SET
           title = COALESCE(excluded.title, title),
           play_time_in_seconds = excluded.play_time_in_seconds,
           last_time_played = excluded.last_time_played,
+          session_started_at = excluded.session_started_at,
           is_deleted = 0
       `).run(
         id, userId, g.objectId, g.shop,
         g.title ?? g.objectId,
         Math.floor((g.playTimeInMilliseconds ?? 0) / 1000),
-        g.lastTimePlayed ? Math.floor(new Date(g.lastTimePlayed).getTime() / 1000) : null
+        g.lastTimePlayed ? Math.floor(new Date(g.lastTimePlayed).getTime() / 1000) : now,
+        sessionStartedAt
       );
       const game = db.prepare("SELECT * FROM games WHERE user_id = ? AND object_id = ? AND shop = ?")
         .get(userId, g.objectId, g.shop) as DbGame;
@@ -237,16 +244,18 @@ export async function profileRoutes(app: FastifyInstance) {
       const { playTimeInSeconds, playTimeDeltaInSeconds, lastTimePlayed, title, executablePath } = req.body;
 
       const existing = db
-        .prepare("SELECT id, play_time_in_seconds FROM games WHERE user_id = ? AND object_id = ? AND shop = ?")
-        .get(userId, objectId, shop) as { id: string; play_time_in_seconds: number } | undefined;
+        .prepare("SELECT id, play_time_in_seconds, last_time_played, session_started_at FROM games WHERE user_id = ? AND object_id = ? AND shop = ?")
+        .get(userId, objectId, shop) as { id: string; play_time_in_seconds: number; last_time_played: number | null; session_started_at: number | null } | undefined;
 
       const lastTimePlayedTs = lastTimePlayed ? Math.floor(new Date(lastTimePlayed).getTime() / 1000) : null;
       const now = Math.floor(Date.now() / 1000);
+      const SESSION_TIMEOUT = 360;
 
       if (!existing) {
         const id = crypto.randomUUID();
         const initialPlayTime = playTimeInSeconds ?? (playTimeDeltaInSeconds ?? 0);
-        const sessionStartedAt = (playTimeDeltaInSeconds ?? 0) > 0 ? now : null;
+        // Any playtime update while creating = session is starting now
+        const sessionStartedAt = playTimeDeltaInSeconds !== undefined ? now : null;
         db.prepare(
           "INSERT INTO games (id, user_id, object_id, shop, title, play_time_in_seconds, last_time_played, session_started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         ).run(id, userId, objectId, shop, title ?? objectId, initialPlayTime, lastTimePlayedTs, sessionStartedAt);
@@ -255,10 +264,14 @@ export async function profileRoutes(app: FastifyInstance) {
           db.prepare(
             "UPDATE games SET play_time_in_seconds = ?, last_time_played = ? WHERE user_id = ? AND object_id = ? AND shop = ?"
           ).run(playTimeInSeconds, lastTimePlayedTs, userId, objectId, shop);
-        } else if (playTimeDeltaInSeconds !== undefined && playTimeDeltaInSeconds > 0) {
+        } else if (playTimeDeltaInSeconds !== undefined) {
+          // Detect session start: previous last_time_played is old or null
+          const prevLastPlayed = existing.last_time_played;
+          const isNewSession = !prevLastPlayed || (now - prevLastPlayed) > SESSION_TIMEOUT;
+          const sessionStartedAt = isNewSession ? now : existing.session_started_at;
           db.prepare(
             "UPDATE games SET play_time_in_seconds = play_time_in_seconds + ?, last_time_played = ?, session_started_at = ? WHERE user_id = ? AND object_id = ? AND shop = ?"
-          ).run(playTimeDeltaInSeconds, lastTimePlayedTs, now, userId, objectId, shop);
+          ).run(playTimeDeltaInSeconds, lastTimePlayedTs ?? now, sessionStartedAt, userId, objectId, shop);
         }
         if (executablePath !== undefined)
           db.prepare(
@@ -568,17 +581,53 @@ export async function profileRoutes(app: FastifyInstance) {
         ORDER BY last_time_played DESC LIMIT 5
       `).all(req.params.userId) as DbGame[]).map(formatGame);
 
-      // Session is considered active if updated within the last 6 minutes (client ticks every 3 min)
       const SESSION_TIMEOUT_SECONDS = 360;
       const nowTs = Math.floor(Date.now() / 1000);
-      const activeGame = db.prepare(`
-        SELECT * FROM games WHERE user_id = ? AND is_deleted = 0
-        AND session_started_at IS NOT NULL AND session_started_at >= ?
-        ORDER BY session_started_at DESC LIMIT 1
-      `).get(req.params.userId, nowTs - SESSION_TIMEOUT_SECONDS) as DbGame | undefined;
 
-      const currentGame = activeGame
-        ? {
+      // Try Steam API first if user has steam_id configured
+      let currentGame: object | null = null;
+      if (user.steam_id && user.steam_api_key) {
+        try {
+          const steamRes = await fetch(
+            `https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key=${encodeURIComponent(user.steam_api_key)}&steamids=${encodeURIComponent(user.steam_id)}`,
+            { signal: AbortSignal.timeout(3000) }
+          );
+          if (steamRes.ok) {
+            const steamData = await steamRes.json() as any;
+            const player = steamData?.response?.players?.[0];
+            if (player?.gameextrainfo && player?.gameid) {
+              const steamObjectId = String(player.gameid);
+              const dbGame = db.prepare(
+                "SELECT * FROM games WHERE user_id = ? AND object_id = ? AND shop = 'steam' AND is_deleted = 0"
+              ).get(req.params.userId, steamObjectId) as DbGame | undefined;
+              const sessionStartedAt = dbGame?.session_started_at ?? nowTs;
+              currentGame = {
+                id: dbGame?.id ?? steamObjectId,
+                objectId: steamObjectId,
+                shop: "steam",
+                title: player.gameextrainfo,
+                iconUrl: null,
+                libraryHeroImageUrl: null,
+                coverImageUrl: null,
+                backgroundImageUrl: null,
+                sessionDurationInMillis: (nowTs - sessionStartedAt) * 1000,
+                sessionDurationInSeconds: nowTs - sessionStartedAt,
+              };
+            }
+          }
+        } catch {}
+      }
+
+      // Fallback: DB session tracking (any shop, client ticks every 3 min → 6 min timeout)
+      if (!currentGame) {
+        const activeGame = db.prepare(`
+          SELECT * FROM games WHERE user_id = ? AND is_deleted = 0
+          AND session_started_at IS NOT NULL AND last_time_played >= ?
+          ORDER BY last_time_played DESC LIMIT 1
+        `).get(req.params.userId, nowTs - SESSION_TIMEOUT_SECONDS) as DbGame | undefined;
+
+        if (activeGame) {
+          currentGame = {
             id: activeGame.id,
             objectId: activeGame.object_id,
             shop: activeGame.shop,
@@ -589,8 +638,9 @@ export async function profileRoutes(app: FastifyInstance) {
             backgroundImageUrl: null,
             sessionDurationInMillis: (nowTs - activeGame.session_started_at!) * 1000,
             sessionDurationInSeconds: nowTs - activeGame.session_started_at!,
-          }
-        : null;
+          };
+        }
+      }
 
       return {
         ...formatUser(user, req),
