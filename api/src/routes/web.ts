@@ -499,7 +499,7 @@ function publicProfilePage(user: DbUser, games: DbGame[], currentGame?: CurrentG
   const steamHours = Math.floor(steamGames.reduce((s, g) => s + g.play_time_in_seconds, 0) / 3600);
 
   const currentGameStat = currentGame
-    ? `<div><span style="color:#6ee87a;font-size:18px;font-weight:bold">${h(currentGame.title)}</span><br><span style="color:var(--sub)">currently playing</span></div>`
+    ? `<div><span style="color:${accent};font-weight:600">${h(currentGame.title)}</span><br><span style="color:var(--sub)">currently playing</span></div>`
     : "";
 
   return page(`@${user.username}`, `
