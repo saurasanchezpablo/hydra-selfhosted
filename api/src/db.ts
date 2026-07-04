@@ -34,6 +34,7 @@ try {
 try { db.exec(`ALTER TABLE users ADD COLUMN show_recent_activity INTEGER NOT NULL DEFAULT 1`); } catch {}
 try { db.exec(`ALTER TABLE users ADD COLUMN show_library INTEGER NOT NULL DEFAULT 1`); } catch {}
 try { db.exec(`ALTER TABLE users ADD COLUMN profile_sections_order TEXT`); } catch {}
+try { db.exec(`ALTER TABLE games ADD COLUMN session_started_at INTEGER`); } catch {}
 
 // Fix image URLs stored as absolute paths
 db.exec(`UPDATE users SET profile_image_url = REPLACE(profile_image_url, '/data/images/', '/images/') WHERE profile_image_url LIKE '/data/%'`);

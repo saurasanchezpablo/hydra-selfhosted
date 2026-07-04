@@ -26,6 +26,7 @@ interface DbGame {
   is_pinned: number;
   is_deleted: number;
   collection_ids: string;
+  session_started_at: number | null;
 }
 
 function imgUrl(req: any, filePath: string | null): string | null {
@@ -224,6 +225,7 @@ export async function profileRoutes(app: FastifyInstance) {
         Params: { shop: string; objectId: string };
         Body: {
           playTimeInSeconds?: number;
+          playTimeDeltaInSeconds?: number;
           lastTimePlayed?: string | null;
           title?: string;
           executablePath?: string | null;
@@ -232,36 +234,32 @@ export async function profileRoutes(app: FastifyInstance) {
     ) => {
       const userId = (req as Req).userId;
       const { shop, objectId } = req.params;
-      const { playTimeInSeconds, lastTimePlayed, title, executablePath } = req.body;
+      const { playTimeInSeconds, playTimeDeltaInSeconds, lastTimePlayed, title, executablePath } = req.body;
 
       const existing = db
-        .prepare("SELECT id FROM games WHERE user_id = ? AND object_id = ? AND shop = ?")
-        .get(userId, objectId, shop);
+        .prepare("SELECT id, play_time_in_seconds FROM games WHERE user_id = ? AND object_id = ? AND shop = ?")
+        .get(userId, objectId, shop) as { id: string; play_time_in_seconds: number } | undefined;
+
+      const lastTimePlayedTs = lastTimePlayed ? Math.floor(new Date(lastTimePlayed).getTime() / 1000) : null;
+      const now = Math.floor(Date.now() / 1000);
 
       if (!existing) {
         const id = crypto.randomUUID();
+        const initialPlayTime = playTimeInSeconds ?? (playTimeDeltaInSeconds ?? 0);
+        const sessionStartedAt = (playTimeDeltaInSeconds ?? 0) > 0 ? now : null;
         db.prepare(
-          "INSERT INTO games (id, user_id, object_id, shop, title, play_time_in_seconds, last_time_played) VALUES (?, ?, ?, ?, ?, ?, ?)"
-        ).run(
-          id,
-          userId,
-          objectId,
-          shop,
-          title ?? objectId,
-          playTimeInSeconds ?? 0,
-          lastTimePlayed ? Math.floor(new Date(lastTimePlayed).getTime() / 1000) : null
-        );
+          "INSERT INTO games (id, user_id, object_id, shop, title, play_time_in_seconds, last_time_played, session_started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        ).run(id, userId, objectId, shop, title ?? objectId, initialPlayTime, lastTimePlayedTs, sessionStartedAt);
       } else {
-        if (playTimeInSeconds !== undefined)
+        if (playTimeInSeconds !== undefined) {
           db.prepare(
             "UPDATE games SET play_time_in_seconds = ?, last_time_played = ? WHERE user_id = ? AND object_id = ? AND shop = ?"
-          ).run(
-            playTimeInSeconds,
-            lastTimePlayed ? Math.floor(new Date(lastTimePlayed).getTime() / 1000) : null,
-            userId,
-            objectId,
-            shop
-          );
+          ).run(playTimeInSeconds, lastTimePlayedTs, userId, objectId, shop);
+        } else if (playTimeDeltaInSeconds !== undefined && playTimeDeltaInSeconds > 0) {
+          db.prepare(
+            "UPDATE games SET play_time_in_seconds = play_time_in_seconds + ?, last_time_played = ?, session_started_at = ? WHERE user_id = ? AND object_id = ? AND shop = ?"
+          ).run(playTimeDeltaInSeconds, lastTimePlayedTs, now, userId, objectId, shop);
+        }
         if (executablePath !== undefined)
           db.prepare(
             "UPDATE games SET executable_path = ? WHERE user_id = ? AND object_id = ? AND shop = ?"
@@ -570,6 +568,30 @@ export async function profileRoutes(app: FastifyInstance) {
         ORDER BY last_time_played DESC LIMIT 5
       `).all(req.params.userId) as DbGame[]).map(formatGame);
 
+      // Session is considered active if updated within the last 6 minutes (client ticks every 3 min)
+      const SESSION_TIMEOUT_SECONDS = 360;
+      const nowTs = Math.floor(Date.now() / 1000);
+      const activeGame = db.prepare(`
+        SELECT * FROM games WHERE user_id = ? AND is_deleted = 0
+        AND session_started_at IS NOT NULL AND session_started_at >= ?
+        ORDER BY session_started_at DESC LIMIT 1
+      `).get(req.params.userId, nowTs - SESSION_TIMEOUT_SECONDS) as DbGame | undefined;
+
+      const currentGame = activeGame
+        ? {
+            id: activeGame.id,
+            objectId: activeGame.object_id,
+            shop: activeGame.shop,
+            title: activeGame.title,
+            iconUrl: null,
+            libraryHeroImageUrl: null,
+            coverImageUrl: null,
+            backgroundImageUrl: null,
+            sessionDurationInMillis: (nowTs - activeGame.session_started_at!) * 1000,
+            sessionDurationInSeconds: nowTs - activeGame.session_started_at!,
+          }
+        : null;
+
       return {
         ...formatUser(user, req),
         totalPlayTimeInSeconds: Math.floor((stats?.total_play ?? 0)),
@@ -581,7 +603,7 @@ export async function profileRoutes(app: FastifyInstance) {
         libraryGames: recentGames,
         totalFriends: 0,
         relation: null,
-        currentGame: null,
+        currentGame,
         hasActiveSubscription: true,
         hasCompletedWrapped2025: false,
       };
