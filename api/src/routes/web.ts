@@ -498,11 +498,10 @@ function publicProfilePage(user: DbUser, games: DbGame[], currentGame?: CurrentG
     .sort((a, b) => (b.is_pinned ?? 0) - (a.is_pinned ?? 0) || b.play_time_in_seconds - a.play_time_in_seconds);
   const steamHours = Math.floor(steamGames.reduce((s, g) => s + g.play_time_in_seconds, 0) / 3600);
 
-  const currentGameBanner = currentGame
-    ? `<div style="display:flex;align-items:center;gap:10px;background:#1a1a2e;border:1px solid ${accent}55;border-radius:8px;padding:10px 14px;margin-bottom:16px">
-        <span style="width:8px;height:8px;border-radius:50%;background:#4ade80;flex-shrink:0;box-shadow:0 0 6px #4ade80"></span>
-        <span style="color:#e1e1e1;font-size:13px">Currently playing <strong style="color:${accent}">${h(currentGame.title)}</strong></span>
-        <span style="color:#666;font-size:12px;margin-left:auto">${fmtDuration(currentGame.sessionDurationInSeconds)}</span>
+  const currentGameStat = currentGame
+    ? `<div style="border-left:1px solid #2a2a2a;padding-left:24px">
+        <span style="font-size:15px;font-weight:700;color:#a3e9b0;text-shadow:0 0 12px #4ade8066;display:block;max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${h(currentGame.title)}</span>
+        <span style="color:#6ee87a;font-size:12px">currently playing</span>
       </div>`
     : "";
 
@@ -519,11 +518,11 @@ function publicProfilePage(user: DbUser, games: DbGame[], currentGame?: CurrentG
             <h2 style="margin:0">@${h(user.username)}${user.bio ? ` · ${h(user.bio)}` : ""}</h2>
           </div>
         </div>
-        ${currentGameBanner}
-        <div style="display:flex;gap:24px;margin:16px 0;font-size:13px">
+        <div style="display:flex;align-items:center;gap:24px;margin:16px 0;font-size:13px;flex-wrap:wrap">
           <div><span style="color:${accent};font-size:18px;font-weight:bold">${games.length}</span><br><span style="color:var(--sub)">games</span></div>
           <div><span style="color:${accent};font-size:18px;font-weight:bold">${totalHours.toLocaleString()}</span><br><span style="color:var(--sub)">total hours</span></div>
           ${user.steam_id ? `<div><span style="color:${accent};font-size:18px;font-weight:bold">${steamHours.toLocaleString()}</span><br><span style="color:var(--sub)">steam hours</span></div>` : ""}
+          ${currentGameStat}
         </div>
         ${user.show_library !== 0 ? tabsHtml(hydraGames, steamGames, Boolean(user.steam_id), user.show_recent_activity !== 0, parseSectionsOrder(user.profile_sections_order)) : ""}
         <p style="font-size:11px;color:var(--sub);margin-top:16px">Powered by <a href="https://github.com/entitybtw/hydra-selfhosted">Hydra Self-Hosted</a></p>
