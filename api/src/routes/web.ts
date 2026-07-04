@@ -34,6 +34,14 @@ interface DbGame {
   pinned_at?: number | null;
   is_favorite?: number;
   last_time_played?: number | null;
+  session_started_at?: number | null;
+}
+
+interface CurrentGame {
+  title: string;
+  objectId: string;
+  shop: string;
+  sessionDurationInSeconds: number;
 }
 
 function hashPassword(p: string) {
@@ -51,6 +59,42 @@ function verifyPassword(p: string, hash: string) {
 
 function h(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+async function resolveCurrentGame(user: DbUser, userId: string): Promise<CurrentGame | null> {
+  const nowTs = Math.floor(Date.now() / 1000);
+  const SESSION_TIMEOUT = 360;
+
+  if (user.steam_id && user.steam_api_key) {
+    try {
+      const res = await fetch(
+        `https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key=${encodeURIComponent(user.steam_api_key)}&steamids=${encodeURIComponent(user.steam_id)}`,
+        { signal: AbortSignal.timeout(3000) }
+      );
+      if (res.ok) {
+        const data = await res.json() as any;
+        const player = data?.response?.players?.[0];
+        if (player?.gameextrainfo && player?.gameid) {
+          const steamObjectId = String(player.gameid);
+          const dbGame = db.prepare(
+            "SELECT session_started_at FROM games WHERE user_id = ? AND object_id = ? AND shop = 'steam' AND is_deleted = 0"
+          ).get(userId, steamObjectId) as { session_started_at: number | null } | undefined;
+          const sessionStartedAt = dbGame?.session_started_at ?? nowTs;
+          return { title: player.gameextrainfo, objectId: steamObjectId, shop: "steam", sessionDurationInSeconds: nowTs - sessionStartedAt };
+        }
+      }
+    } catch {}
+  }
+
+  // Fallback: DB session tracking
+  const active = db.prepare(
+    "SELECT object_id, title, shop, session_started_at FROM games WHERE user_id = ? AND is_deleted = 0 AND session_started_at IS NOT NULL AND last_time_played >= ? ORDER BY last_time_played DESC LIMIT 1"
+  ).get(userId, nowTs - SESSION_TIMEOUT) as { object_id: string; title: string; shop: string; session_started_at: number } | undefined;
+
+  if (active) {
+    return { title: active.title, objectId: active.object_id, shop: active.shop, sessionDurationInSeconds: nowTs - active.session_started_at };
+  }
+  return null;
 }
 
 function fmtHours(seconds: number) {
@@ -438,7 +482,14 @@ function dashboardPage(user: DbUser, games: DbGame[], msg?: string, msgType: "ok
 
 const DEFAULT_PROFILE_CSS = `*{box-sizing:border-box;margin:0;padding:0}body{background:#111;color:#e1e1e1;font-family:"Inter",system-ui,sans-serif;font-size:14px;min-height:100vh}a{color:inherit;text-decoration:none}.card.wide{max-width:100%;border-radius:0;border:none;background:transparent}.card.wide>div:first-child{height:220px!important;border-radius:0}.card.wide>div:nth-child(2){max-width:960px;margin:0 auto;padding:0 32px 48px!important}.card.wide>div:nth-child(2)>div:first-child{margin-top:-56px!important;margin-bottom:24px!important;align-items:flex-end}.card.wide>div:nth-child(2)>div:first-child img,.card.wide>div:nth-child(2)>div:first-child>div:first-child{width:96px!important;height:96px!important;border-radius:12px!important;border:3px solid #111!important;box-shadow:0 4px 24px rgba(0,0,0,.6)}.card.wide h1{font-size:22px;font-weight:700;letter-spacing:-.3px;color:#fff}.card.wide h2{font-size:13px;font-weight:400;color:#888;margin-top:2px}.card.wide>div:nth-child(2)>div:nth-child(2){background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:16px 24px;gap:32px!important;margin:0 0 24px!important;display:inline-flex!important}.card.wide>div:nth-child(2)>div:nth-child(2)>div{text-align:center}.card.wide>div:nth-child(2)>div:nth-child(2) span:first-child{font-size:20px!important;font-weight:700}.tab-btn{background:transparent;border:none;border-bottom:2px solid transparent;color:#888;font-size:13px;font-weight:500;padding:8px 4px;cursor:pointer;transition:color .15s,border-color .15s}.tab-btn.active,.tab-btn:hover{color:var(--btn-text,#111);border-color:var(--accent,#8b5cf6)}.game-grid{display:grid!important;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:16px}.game-item{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;overflow:hidden;transition:border-color .15s,transform .15s;cursor:default}.game-item:hover{border-color:var(--accent,#8b5cf6);transform:translateY(-2px)}.game-item img{width:100%;aspect-ratio:3/2;object-fit:cover;display:block}.game-item>div{padding:8px 10px}.game-item strong{font-size:12px;font-weight:500;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.game-item span{font-size:11px;color:#666}.card.wide p:last-child{color:#444!important;margin-top:32px!important}.card.wide p:last-child a{color:var(--accent,#8b5cf6)}`;
 
-function publicProfilePage(user: DbUser, games: DbGame[]) {
+function fmtDuration(seconds: number): string {
+  if (seconds < 60) return "just now";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+function publicProfilePage(user: DbUser, games: DbGame[], currentGame?: CurrentGame | null) {
   const accent = user.accent_color || "#7b68ee";
   const totalHours = Math.floor(games.reduce((s, g) => s + g.play_time_in_seconds, 0) / 3600);
   const hydraGames = [...games].filter(g => g.source !== "steam_sync")
@@ -446,6 +497,14 @@ function publicProfilePage(user: DbUser, games: DbGame[]) {
   const steamGames = [...games].filter(g => g.source === "steam_sync")
     .sort((a, b) => (b.is_pinned ?? 0) - (a.is_pinned ?? 0) || b.play_time_in_seconds - a.play_time_in_seconds);
   const steamHours = Math.floor(steamGames.reduce((s, g) => s + g.play_time_in_seconds, 0) / 3600);
+
+  const currentGameBanner = currentGame
+    ? `<div style="display:flex;align-items:center;gap:10px;background:#1a1a2e;border:1px solid ${accent}55;border-radius:8px;padding:10px 14px;margin-bottom:16px">
+        <span style="width:8px;height:8px;border-radius:50%;background:#4ade80;flex-shrink:0;box-shadow:0 0 6px #4ade80"></span>
+        <span style="color:#e1e1e1;font-size:13px">Currently playing <strong style="color:${accent}">${h(currentGame.title)}</strong></span>
+        <span style="color:#666;font-size:12px;margin-left:auto">${fmtDuration(currentGame.sessionDurationInSeconds)}</span>
+      </div>`
+    : "";
 
   return page(`@${user.username}`, `
     <div class="card wide" style="padding:0;overflow:hidden">
@@ -460,6 +519,7 @@ function publicProfilePage(user: DbUser, games: DbGame[]) {
             <h2 style="margin:0">@${h(user.username)}${user.bio ? ` · ${h(user.bio)}` : ""}</h2>
           </div>
         </div>
+        ${currentGameBanner}
         <div style="display:flex;gap:24px;margin:16px 0;font-size:13px">
           <div><span style="color:${accent};font-size:18px;font-weight:bold">${games.length}</span><br><span style="color:var(--sub)">games</span></div>
           <div><span style="color:${accent};font-size:18px;font-weight:bold">${totalHours.toLocaleString()}</span><br><span style="color:var(--sub)">total hours</span></div>
@@ -754,6 +814,7 @@ export async function webRoutes(app: FastifyInstance) {
       });
     }
 
-    return reply.type("text/html").send(publicProfilePage(user, games));
+    const currentGame = await resolveCurrentGame(user, user.id);
+    return reply.type("text/html").send(publicProfilePage(user, games, currentGame));
   });
 }
