@@ -42,6 +42,13 @@ Full web interface at `http://your-server:3000`:
 | HowLongToBeat | Proxy HLTB completion times through your server |
 | ProtonDB | Proxy ProtonDB Linux ratings through your server |
 
+### Big Picture support
+
+The [entitybtw/hydra](https://github.com/entitybtw/hydra) fork's Big Picture mode fully supports self-hosted accounts:
+
+- **Self-hosted profile in Big Picture** — library, stats, friends, and recent activity all load correctly even when the server does not return optional fields
+- **Dual accounts** — if you also have an official Hydra account, both avatars appear in the Big Picture sidebar; clicking the small official avatar opens that profile without affecting your self-hosted session
+
 ### Other
 
 - **No subscription required** — all features work without Hydra Cloud
