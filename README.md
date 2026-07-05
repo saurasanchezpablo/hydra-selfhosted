@@ -39,8 +39,6 @@ Full web interface at `http://your-server:3000`:
 | Feature | What it does |
 |---|---|
 | Reviews | Read and write game reviews stored on your server |
-| HowLongToBeat | Proxy HLTB completion times through your server |
-| ProtonDB | Proxy ProtonDB Linux ratings through your server |
 
 ### Big Picture support
 
