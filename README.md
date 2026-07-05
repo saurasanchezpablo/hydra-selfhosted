@@ -97,6 +97,16 @@ data/
   artifacts/      # cloud save archives
 ```
 
+## Cloud save size limit
+
+Cloud save uploads are capped at **50 MB** by default. To change the limit, edit the `bodyLimit` value in `api/src/index.ts`:
+
+```ts
+const app = Fastify({ logger: true, bodyLimit: 50 * 1024 * 1024 }); // 50 MB
+```
+
+Update the number (in bytes), then rebuild the API (`docker compose up --build -d`).
+
 ## Updating
 
 ```bash

@@ -12,10 +12,10 @@ import { catalogueRoutes } from "./routes/catalogue";
 import { reviewsRoutes } from "./routes/reviews";
 import { startSteamSyncScheduler } from "./steam-sync";
 
-const app = Fastify({ logger: true });
+const app = Fastify({ logger: true, bodyLimit: 50 * 1024 * 1024 });
 
 app.register(fastifyCookie);
-app.register(fastifyMultipart, { limits: { fileSize: 10 * 1024 * 1024 } });
+app.register(fastifyMultipart, { limits: { fileSize: 50 * 1024 * 1024 } });
 
 app.addContentTypeParser("application/tar", { parseAs: "buffer" }, (_req, body, done) => {
   done(null, body);
