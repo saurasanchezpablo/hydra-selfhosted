@@ -12,10 +12,13 @@ import { catalogueRoutes } from "./routes/catalogue";
 import { reviewsRoutes } from "./routes/reviews";
 import { startSteamSyncScheduler } from "./steam-sync";
 
-const app = Fastify({ logger: true, bodyLimit: 50 * 1024 * 1024 });
+const maxSaveSizeMb = Number(process.env.MAX_SAVE_SIZE_MB) || 50;
+const maxSaveSizeBytes = maxSaveSizeMb * 1024 * 1024;
+
+const app = Fastify({ logger: true, bodyLimit: maxSaveSizeBytes });
 
 app.register(fastifyCookie);
-app.register(fastifyMultipart, { limits: { fileSize: 50 * 1024 * 1024 } });
+app.register(fastifyMultipart, { limits: { fileSize: maxSaveSizeBytes } });
 
 app.addContentTypeParser("application/tar", { parseAs: "buffer" }, (_req, body, done) => {
   done(null, body);

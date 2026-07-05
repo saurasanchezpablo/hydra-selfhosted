@@ -99,13 +99,13 @@ data/
 
 ## Cloud save size limit
 
-Cloud save uploads are capped at **50 MB** by default. To change the limit, edit the `bodyLimit` value in `api/src/index.ts`:
+Cloud save uploads are capped at **50 MB** by default. To change the limit, set `MAX_SAVE_SIZE_MB` (in megabytes) in your `.env`:
 
-```ts
-const app = Fastify({ logger: true, bodyLimit: 50 * 1024 * 1024 }); // 50 MB
+```env
+MAX_SAVE_SIZE_MB=100
 ```
 
-Update the number (in bytes), then rebuild the API (`docker compose up --build -d`).
+Then restart the API (`docker compose up -d`). No code changes needed.
 
 ## Updating
 

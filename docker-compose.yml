@@ -10,4 +10,5 @@ services:
       - PORT=${PORT:-3000}
       - SESSION_TTL_DAYS=${SESSION_TTL_DAYS:-30}
       - PUBLIC_URL=${PUBLIC_URL:-}
+      - MAX_SAVE_SIZE_MB=${MAX_SAVE_SIZE_MB:-50}
     restart: unless-stopped
