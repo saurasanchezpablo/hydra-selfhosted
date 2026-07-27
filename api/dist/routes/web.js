@@ -1,0 +1,784 @@
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.webRoutes = webRoutes;
+const node_crypto_1 = __importDefault(require("node:crypto"));
+const promises_1 = __importDefault(require("node:fs/promises"));
+const node_path_1 = __importDefault(require("node:path"));
+const bcryptjs_1 = __importDefault(require("bcryptjs"));
+const db_1 = require("../db");
+const auth_1 = require("../auth");
+const steam_sync_1 = require("../steam-sync");
+function hashPassword(p) {
+    return bcryptjs_1.default.hashSync(p, 10);
+}
+function verifyPassword(p, hash) {
+    // support legacy sha256 hashes during migration
+    if (hash.length === 64) {
+        const sha = require("node:crypto").createHash("sha256").update(p).digest("hex");
+        return sha === hash;
+    }
+    return bcryptjs_1.default.compareSync(p, hash);
+}
+function h(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+async function resolveCurrentGame(user, userId) {
+    const nowTs = Math.floor(Date.now() / 1000);
+    const SESSION_TIMEOUT = 360;
+    if (user.steam_id && user.steam_api_key) {
+        try {
+            const res = await fetch(`https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key=${encodeURIComponent(user.steam_api_key)}&steamids=${encodeURIComponent(user.steam_id)}`, { signal: AbortSignal.timeout(3000) });
+            if (res.ok) {
+                const data = await res.json();
+                const player = data?.response?.players?.[0];
+                if (player?.gameextrainfo && player?.gameid) {
+                    const steamObjectId = String(player.gameid);
+                    const dbGame = db_1.db.prepare("SELECT session_started_at FROM games WHERE user_id = ? AND object_id = ? AND shop = 'steam' AND is_deleted = 0").get(userId, steamObjectId);
+                    const sessionStartedAt = dbGame?.session_started_at ?? nowTs;
+                    return { title: player.gameextrainfo, objectId: steamObjectId, shop: "steam", sessionDurationInSeconds: nowTs - sessionStartedAt };
+                }
+            }
+        }
+        catch { }
+    }
+    // Fallback: DB session tracking
+    const active = db_1.db.prepare("SELECT object_id, title, shop, session_started_at FROM games WHERE user_id = ? AND is_deleted = 0 AND session_started_at IS NOT NULL AND last_time_played >= ? ORDER BY last_time_played DESC LIMIT 1").get(userId, nowTs - SESSION_TIMEOUT);
+    if (active) {
+        return { title: active.title, objectId: active.object_id, shop: active.shop, sessionDurationInSeconds: nowTs - active.session_started_at };
+    }
+    return null;
+}
+function fmtHours(seconds) {
+    const h = Math.floor(seconds / 3600);
+    if (h >= 1000)
+        return `${h.toLocaleString()}h`;
+    const m = Math.floor((seconds % 3600) / 60);
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+function fmtRelative(unixSec) {
+    if (!unixSec)
+        return "";
+    const diff = Math.floor(Date.now() / 1000) - unixSec;
+    if (diff < 60)
+        return "just now";
+    if (diff < 3600)
+        return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400)
+        return `${Math.floor(diff / 3600)}h ago`;
+    if (diff < 2592000)
+        return `${Math.floor(diff / 86400)}d ago`;
+    return new Date(unixSec * 1000).toLocaleDateString();
+}
+function parseSectionsOrder(raw) {
+    try {
+        const arr = JSON.parse(raw || '["games","recent"]');
+        // Migrate old keys: "library" -> "games"
+        const mapped = arr.map((k) => k === "library" ? "games" : k);
+        const valid = ["games", "recent"];
+        const filtered = mapped.filter((k) => valid.includes(k));
+        // Ensure both keys present
+        for (const k of valid)
+            if (!filtered.includes(k))
+                filtered.push(k);
+        return filtered;
+    }
+    catch {
+        return ["games", "recent"];
+    }
+}
+function recentActivityHtml(games) {
+    const seen = new Set();
+    const recent = [...games]
+        .filter(g => g.last_time_played)
+        .sort((a, b) => (b.last_time_played ?? 0) - (a.last_time_played ?? 0))
+        .filter(g => { const k = `${g.shop}:${g.object_id}`; if (seen.has(k))
+        return false; seen.add(k); return true; })
+        .slice(0, 5);
+    if (!recent.length)
+        return `<p style="color:var(--sub);font-size:13px;padding:8px 0">No recent activity.</p>`;
+    return `<table><thead><tr><th>Game</th><th>Playtime</th><th>Last played</th></tr></thead><tbody>` +
+        recent.map(g => `<tr><td>${h(g.title)}</td><td>${fmtHours(g.play_time_in_seconds)}</td><td>${fmtRelative(g.last_time_played)}</td></tr>`).join("") +
+        `</tbody></table>`;
+}
+const CSS = `
+  :root{--bg:#0d0d0d;--bg2:#151515;--bg3:#1e1e1e;--border:#2a2a2a;--accent:#7b68ee;--text:#e0e0e0;--sub:#888;--err:#e05c5c}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#111;color:#e1e1e1;font-family:"Inter",system-ui,sans-serif;min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:40px 20px}
+  .card{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:32px;width:100%;max-width:420px}
+  .card.wide{max-width:720px;padding:0}
+  h1{font-size:20px;font-weight:700;color:#fff;margin-bottom:4px;letter-spacing:-.3px}
+  h2{font-size:13px;color:#888;margin-bottom:24px;font-weight:400}
+  h3{font-size:11px;color:#666;margin:24px 0 10px;text-transform:uppercase;letter-spacing:.1em;font-weight:600}
+  label{display:block;font-size:12px;color:#888;margin-bottom:4px;font-weight:500}
+  input,textarea{width:100%;background:#111;border:1px solid #2a2a2a;border-radius:6px;padding:9px 12px;color:#e1e1e1;font-family:inherit;font-size:13px;outline:none;transition:border .15s}
+  input:focus,textarea:focus{border-color:var(--accent,#7b68ee)}
+  textarea{resize:vertical;min-height:60px}
+  .field{margin-bottom:14px}
+  button,.btn{background:var(--accent,#7b68ee);color:var(--btn-text,#fff);border:none;border-radius:6px;padding:10px 18px;font-family:inherit;font-size:13px;font-weight:500;cursor:pointer;width:100%;transition:opacity .15s}
+  button:hover,.btn:hover{opacity:.85}
+  .btn-ghost{background:transparent;border:1px solid #2a2a2a;color:#888}
+  .btn-ghost:hover{border-color:var(--accent,#7b68ee);color:#e1e1e1}
+  .err{background:#1f0f0f;border:1px solid #5a2020;border-radius:6px;padding:10px 14px;font-size:12px;color:#e07070;margin-bottom:14px}
+  .ok{background:#0f1f14;border:1px solid #2a6040;border-radius:6px;padding:10px 14px;font-size:12px;color:#5cb87a;margin-bottom:14px}
+  a{color:var(--accent,#7b68ee);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .meta{font-size:12px;color:#666;text-align:center;margin-top:16px}
+  .row{display:flex;gap:10px}
+  .row button{flex:1}
+  .token-box{background:#111;border:1px solid #2a2a2a;border-radius:6px;padding:10px 12px;font-size:12px;word-break:break-all;color:#888}
+  .tab-btn{background:#1a1a1a;border:1px solid #2a2a2a;color:#888;width:auto;padding:6px 14px;font-size:12px;border-radius:6px}
+  .tab-btn.active{background:var(--accent,#7b68ee);border-color:var(--accent,#7b68ee);color:var(--btn-text,#fff)}
+  .tab-btn:hover{opacity:.85}
+  th{color:#666;text-align:left;padding:6px 8px;border-bottom:1px solid #2a2a2a;font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+  td{padding:8px 8px;border-bottom:1px solid #1a1a1a;color:#e1e1e1;font-size:13px}
+  tr:last-child td{border-bottom:none}
+  .badge{font-size:10px;background:#222;border:1px solid #2a2a2a;border-radius:4px;padding:1px 6px;color:#888}
+  .warn{background:#1a1500;border:1px solid #4a3800;border-radius:6px;padding:10px 14px;font-size:12px;color:#c8a040;margin-bottom:14px}
+`;
+function contrastColor(hex) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    // Perceived luminance
+    return (r * 299 + g * 587 + b * 114) / 1000 > 128 ? "#111111" : "#ffffff";
+}
+function page(title, body, accent = "#7b68ee", customCss = "") {
+    return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${h(title)} — Hydra Self-Hosted</title><style>${CSS}:root{--accent:${accent};--btn-text:${contrastColor(accent)}}${customCss ? customCss : ""}</style></head><body>${body}</body></html>`;
+}
+function tokenGatePage(error) {
+    return page("Access", `
+    <div class="card">
+      <h1>⬡ Hydra Self-Hosted</h1>
+      <h2>Enter your API token to continue</h2>
+      ${error ? `<div class="err">${h(error)}</div>` : ""}
+      <form method="POST" action="/web/gate">
+        <div class="field"><label>API Token</label><input name="instance_token" type="password" autofocus required></div>
+        <button type="submit">Continue</button>
+      </form>
+    </div>
+  `, "#e0e0e0");
+}
+function loginPage(error, launcher = false) {
+    return page("Sign in", `
+    <div class="card">
+      <h1>⬡ Hydra Self-Hosted</h1>
+      <h2>Sign in to your account</h2>
+      ${error ? `<div class="err">${h(error)}</div>` : ""}
+      <form method="POST" action="/web/login">
+        <input type="hidden" name="launcher" value="${launcher ? "1" : ""}">
+        <div class="field"><label>Username</label><input name="username" autocomplete="username" required autofocus></div>
+        <div class="field"><label>Password</label><input name="password" type="password" autocomplete="current-password" required></div>
+        <div class="row">
+          <button type="submit" name="action" value="login">Sign in</button>
+          <button type="submit" name="action" value="register" class="btn-ghost">Register</button>
+        </div>
+      </form>
+      <p class="meta">This is a Hydra Launcher self-hosted instance</p>
+    </div>
+  `, "#e0e0e0");
+}
+function tabsHtml(hydraGames, steamGames, hasSteam, showRecent = true, sectionsOrder = ["games", "recent"]) {
+    const PIN_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:middle;margin-right:4px;opacity:0.7"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>`;
+    const HEART_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="#e05c73" style="vertical-align:middle;margin-left:4px;flex-shrink:0"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>`;
+    const mkRows = (list) => {
+        const sorted = [...list.filter(g => g.is_pinned), ...list.filter(g => !g.is_pinned)];
+        return sorted.slice(0, 100).map(g => `<tr><td>${g.is_pinned ? PIN_ICON : ""}${h(g.title)}${g.is_favorite ? HEART_ICON : ""}</td><td>${fmtHours(g.play_time_in_seconds)}</td></tr>`).join("") || `<tr><td colspan="2" style="color:var(--sub)">No games yet.</td></tr>`;
+    };
+    const mkContent = (list) => {
+        const parts = {
+            games: `<table><thead><tr><th>Game</th><th>Playtime</th></tr></thead><tbody>${mkRows(list)}</tbody></table>`,
+            recent: showRecent ? `<h3 style="margin-top:20px">Recent Activity</h3>${recentActivityHtml(list)}` : "",
+        };
+        return sectionsOrder.map(k => parts[k] ?? "").join("");
+    };
+    const mkPanel = (id, list) => `
+    <div class="tab-panel" id="tab-${id}" style="display:none">${mkContent(list)}</div>`;
+    return `
+    <div class="tabs" style="margin-top:16px">
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button class="tab-btn active" data-tab="ph-hydra">Hydra (${hydraGames.length})</button>
+        ${hasSteam ? `<button class="tab-btn" data-tab="ph-steam">Steam (${steamGames.length})</button>` : ""}
+      </div>
+      <div class="tab-panel" id="tab-ph-hydra">${mkContent(hydraGames)}</div>
+      ${hasSteam ? mkPanel("ph-steam", steamGames) : ""}
+    </div>
+    <script>
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+          document.querySelectorAll('.tab-panel').forEach(p => p.style.display = 'none');
+          btn.classList.add('active');
+          document.getElementById('tab-' + btn.dataset.tab).style.display = '';
+        });
+      });
+    </script>
+  `;
+}
+function dashboardTabsHtml(hydraGames, steamGames, hasSteam) {
+    const PIN_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:middle;margin-right:4px;opacity:0.7"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>`;
+    const HEART_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="#e05c73" style="vertical-align:middle;margin-left:4px;flex-shrink:0"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>`;
+    const mkRows = (list) => {
+        const sorted = [...list.filter(g => g.is_pinned), ...list.filter(g => !g.is_pinned)];
+        return sorted.slice(0, 100).map(g => `
+      <tr>
+        <td>${g.is_pinned ? PIN_ICON : ""}${h(g.title)}${g.is_favorite ? HEART_ICON : ""}</td>
+        <td>${fmtHours(g.play_time_in_seconds)}</td>
+        <td style="text-align:right;white-space:nowrap">
+          <form method="POST" action="/web/${g.is_favorite ? "unfavorite" : "favorite"}" style="display:inline;margin:0">
+            <input type="hidden" name="shop" value="${h(g.shop)}">
+            <input type="hidden" name="object_id" value="${h(g.object_id)}">
+            <button type="submit" style="background:none;border:1px solid var(--bg3);border-radius:4px;cursor:pointer;padding:2px 6px;font-size:11px;color:${g.is_favorite ? "#e05c73" : "var(--sub)"}">${g.is_favorite ? "♥" : "♡"}</button>
+          </form>
+          <form method="POST" action="/web/${g.is_pinned ? "unpin" : "pin"}" style="display:inline;margin:0">
+            <input type="hidden" name="shop" value="${h(g.shop)}">
+            <input type="hidden" name="object_id" value="${h(g.object_id)}">
+            <button type="submit" style="background:none;border:1px solid var(--bg3);border-radius:4px;cursor:pointer;padding:2px 6px;font-size:11px;color:${g.is_pinned ? "var(--accent)" : "var(--sub)"}">${g.is_pinned ? "Unpin" : "Pin"}</button>
+          </form>
+        </td>
+      </tr>`).join("") || `<tr><td colspan="3" style="color:var(--sub)">No games yet.</td></tr>`;
+    };
+    const mkPanel = (id, list) => `
+    <div class="tab-panel" id="tab-${id}" style="display:none">
+      <table><thead><tr><th>Game</th><th>Playtime</th><th></th></tr></thead><tbody>${mkRows(list)}</tbody></table>
+      <h3 style="margin-top:20px">Recent Activity</h3>
+      ${recentActivityHtml(list)}
+    </div>`;
+    return `
+    <div class="tabs" style="margin-top:16px">
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button class="tab-btn active" data-tab="dh-hydra">Hydra (${hydraGames.length})</button>
+        ${hasSteam ? `<button class="tab-btn" data-tab="dh-steam">Steam (${steamGames.length})</button>` : ""}
+      </div>
+      <div class="tab-panel" id="tab-dh-hydra">
+        <table><thead><tr><th>Game</th><th>Playtime</th><th></th></tr></thead><tbody>${mkRows(hydraGames)}</tbody></table>
+        <h3 style="margin-top:20px">Recent Activity</h3>
+        ${recentActivityHtml(hydraGames)}
+      </div>
+      ${hasSteam ? mkPanel("dh-steam", steamGames) : ""}
+    </div>
+    <script>
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+          document.querySelectorAll('.tab-panel').forEach(p => p.style.display = 'none');
+          btn.classList.add('active');
+          document.getElementById('tab-' + btn.dataset.tab).style.display = '';
+        });
+      });
+    </script>
+  `;
+}
+function dashboardPage(user, games, msg, msgType = "ok") {
+    const accent = user.accent_color || "#7b68ee";
+    const totalHours = Math.floor(games.reduce((s, g) => s + g.play_time_in_seconds, 0) / 3600);
+    const hydraGames = [...games].filter(g => g.source !== "steam_sync")
+        .sort((a, b) => (b.is_pinned ?? 0) - (a.is_pinned ?? 0) || b.play_time_in_seconds - a.play_time_in_seconds);
+    const steamGames = [...games].filter(g => g.source === "steam_sync")
+        .sort((a, b) => (b.is_pinned ?? 0) - (a.is_pinned ?? 0) || b.play_time_in_seconds - a.play_time_in_seconds);
+    const DASHBOARD_JS = [
+        "const avatarWrap=document.getElementById('avatar-overlay')?.parentElement;",
+        "const overlay=document.getElementById('avatar-overlay');",
+        "if(avatarWrap&&overlay){avatarWrap.addEventListener('mouseenter',()=>overlay.style.opacity='1');avatarWrap.addEventListener('mouseleave',()=>overlay.style.opacity='0');}",
+        "let cropOffX=0,cropOffY=0,cropDragStart=null;",
+        "const modal=document.getElementById('crop-modal');",
+        "const cropImg=document.getElementById('crop-img');",
+        "const zoomSlider=document.getElementById('crop-zoom');",
+        "const rotSlider=document.getElementById('crop-rotate');",
+        "const FRAME=300;",
+        "function updateCropTransform(){const z=parseFloat(zoomSlider.value),r=parseFloat(rotSlider.value);cropImg.style.transform='translate('+cropOffX+'px,'+cropOffY+'px) rotate('+r+'deg) scale('+z+')';}",
+        "zoomSlider.oninput=updateCropTransform;rotSlider.oninput=updateCropTransform;",
+        "cropImg.addEventListener('mousedown',e=>{cropDragStart={x:e.clientX-cropOffX,y:e.clientY-cropOffY};e.preventDefault();});",
+        "document.addEventListener('mousemove',e=>{if(!cropDragStart)return;cropOffX=e.clientX-cropDragStart.x;cropOffY=e.clientY-cropDragStart.y;updateCropTransform();});",
+        "document.addEventListener('mouseup',()=>{cropDragStart=null;});",
+        "function openCrop(input){const file=input.files[0];if(!file)return;const url=URL.createObjectURL(file);cropImg.onload=()=>{cropImg.style.width=cropImg.style.height='300px';cropOffX=0;cropOffY=0;zoomSlider.value=1;rotSlider.value=0;updateCropTransform();};cropImg.src=url;modal.style.display='flex';}",
+        "function closeCrop(){modal.style.display='none';document.getElementById('avatar-input').value='';}",
+        "function applyCrop(){const canvas=document.createElement('canvas');canvas.width=canvas.height=FRAME;const ctx=canvas.getContext('2d');const z=parseFloat(zoomSlider.value),r=parseFloat(rotSlider.value)*Math.PI/180;ctx.save();ctx.translate(FRAME/2+cropOffX,FRAME/2+cropOffY);ctx.rotate(r);ctx.scale(z,z);ctx.drawImage(cropImg,-cropImg.naturalWidth/2,-cropImg.naturalHeight/2);ctx.restore();canvas.toBlob(blob=>{const fd=new FormData();fd.append('image',blob,'avatar.png');fetch('/web/upload-avatar',{method:'POST',body:fd}).then(()=>location.reload());closeCrop();},'image/png');}",
+        "function uploadImg(input){const file=input.files[0];if(!file)return;const fd=new FormData();fd.append('image',file);fetch('/web/upload-banner',{method:'POST',body:fd}).then(()=>location.reload());}",
+        "function removeBanner(){fetch('/web/remove-banner',{method:'POST'}).then(()=>location.reload());}",
+    ].join("\n");
+    return page("Dashboard", `
+    <div class="card wide" style="padding:0;overflow:hidden">
+      <div style="position:relative">
+        ${user.background_image_url
+        ? `<div id="banner" style="height:140px;background:url('${h(user.background_image_url)}') center/cover no-repeat;position:relative"></div>`
+        : `<div id="banner" style="height:80px;background:var(--bg3);position:relative"></div>`}
+        <div style="position:absolute;top:8px;right:8px;display:flex;gap:6px">
+          <label style="cursor:pointer;background:rgba(0,0,0,.55);color:#fff;font-size:11px;padding:4px 10px;border-radius:4px;backdrop-filter:blur(4px)">
+            ${user.background_image_url ? "Change banner" : "Set banner"}
+            <input type="file" accept="image/*" style="display:none" onchange="uploadImg(this,'banner')">
+          </label>
+          ${user.background_image_url ? `<button onclick="removeBanner()" style="background:rgba(0,0,0,.55);color:#fff;font-size:11px;padding:4px 10px;border-radius:4px;border:none;cursor:pointer;backdrop-filter:blur(4px)">Remove</button>` : ""}
+        </div>
+      </div>
+      <div style="padding:0 32px 32px">
+        <div style="display:flex;align-items:flex-end;gap:16px;margin-top:${user.background_image_url ? "-36px" : "-16px"};margin-bottom:16px;position:relative;z-index:1">
+          <div style="position:relative;flex-shrink:0;cursor:pointer" onclick="document.getElementById('avatar-input').click()" title="Change avatar">
+            ${user.profile_image_url
+        ? `<img src="${h(user.profile_image_url)}" id="avatar-preview" style="width:64px;height:64px;border-radius:10px;border:3px solid var(--bg2);object-fit:cover;display:block">`
+        : `<div id="avatar-preview" style="width:64px;height:64px;border-radius:10px;border:3px solid var(--bg2);background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:24px">⬡</div>`}
+            <div style="position:absolute;inset:0;border-radius:10px;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s" id="avatar-overlay">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm17.71-10.46a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+            </div>
+            <input type="file" id="avatar-input" accept="image/*" style="display:none" onchange="openCrop(this)">
+          </div>
+          <div>
+            <div style="font-size:18px;color:var(--accent);font-weight:bold">${h(user.display_name || user.username)}</div>
+            <div style="font-size:13px;color:var(--sub)">@${h(user.username)} · ${games.length} games · ${totalHours.toLocaleString()}h</div>
+          </div>
+        </div>
+      ${msg ? `<div class="${msgType}">${h(msg)}</div>` : ""}
+
+      <h3>Security</h3>
+      <form method="POST" action="/web/password">
+        <div class="field"><label>Current password</label><input name="current_password" type="password" required autocomplete="current-password"></div>
+        <div class="field"><label>New password</label><input name="new_password" type="password" required minlength="6" autocomplete="new-password"></div>
+        <button type="submit">Change password</button>
+      </form>
+
+      <h3>Profile</h3>
+      <form method="POST" action="/web/profile">
+        <div class="field"><label>Username</label><input name="username" value="${h(user.username)}" maxlength="32" pattern="[a-zA-Z0-9_]+" title="Letters, numbers and underscores only"></div>
+        <div class="field"><label>Display name</label><input name="display_name" value="${h(user.display_name)}" maxlength="64"></div>
+        <div class="field"><label>Bio</label><textarea name="bio" maxlength="200">${h(user.bio)}</textarea></div>
+        <div class="field"><label>Accent color</label><div style="display:flex;gap:8px;align-items:center"><input type="color" id="accent_picker" name="accent_color" value="${h(accent)}" style="width:40px;height:32px;padding:2px;cursor:pointer" oninput="document.getElementById('accent_hex').value=this.value"><input id="accent_hex" name="accent_color_hex" value="${h(accent)}" maxlength="7" style="flex:1" placeholder="#7b68ee" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value))document.getElementById('accent_picker').value=this.value"></div></div>
+        <div class="field"><label>Custom CSS <span style="color:var(--sub);font-size:11px">(applied to dashboard &amp; public profile)</span></label><textarea name="custom_css" rows="6" style="font-family:monospace;font-size:12px" placeholder="/* e.g. body { background: #000; } */">${h(user.custom_css || "")}</textarea></div>
+        <div class="field" style="display:flex;align-items:center;gap:8px">
+          <input type="checkbox" name="show_recent_activity" id="show_recent" value="1"${user.show_recent_activity !== 0 ? " checked" : ""} style="width:auto">
+          <label for="show_recent" style="margin:0;cursor:pointer">Show recent activity on public profile</label>
+        </div>
+        <div class="field" style="display:flex;align-items:center;gap:8px">
+          <input type="checkbox" name="show_library" id="show_library" value="1"${user.show_library !== 0 ? " checked" : ""} style="width:auto">
+          <label for="show_library" style="margin:0;cursor:pointer">Show library on public profile</label>
+        </div>
+        <div class="field">
+          <label>Section order inside each tab <span style="color:var(--sub);font-size:11px">(drag to reorder)</span></label>
+          <input type="hidden" name="profile_sections_order" id="sections_order_input" value="${h(JSON.stringify(parseSectionsOrder(user.profile_sections_order)))}">
+          <ul id="sections-list" style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:6px">${(() => {
+        const order = parseSectionsOrder(user.profile_sections_order);
+        const labels = { games: "Game list", recent: "Recent Activity" };
+        return order.map(k => `<li data-key="${k}" style="display:flex;align-items:center;gap:8px;background:var(--bg3);padding:8px 12px;border-radius:6px;cursor:grab;user-select:none"><span style="opacity:.5">⠿</span> ${labels[k] ?? k}</li>`).join("");
+    })()}</ul>
+        </div>
+        <button type="submit">Save profile</button>
+      </form>
+      <script>
+      (function(){
+        const list = document.getElementById('sections-list');
+        const inp = document.getElementById('sections_order_input');
+        if (!list || !inp) return;
+        let drag = null;
+        list.querySelectorAll('li').forEach(el => {
+          el.setAttribute('draggable', 'true');
+          el.addEventListener('dragstart', e => { drag = el; el.style.opacity = '.4'; e.dataTransfer.effectAllowed = 'move'; });
+          el.addEventListener('dragend', () => { drag.style.opacity = ''; drag = null; updateOrder(); });
+          el.addEventListener('dragover', e => { e.preventDefault(); if (drag && drag !== el) { const r = el.getBoundingClientRect(); list.insertBefore(drag, e.clientY < r.top + r.height / 2 ? el : el.nextSibling); }});
+        });
+        function updateOrder() { inp.value = JSON.stringify([...list.querySelectorAll('li')].map(li => li.dataset.key)); }
+      })();
+      </script>
+
+      <h3>Steam integration</h3>
+      <div class="warn">Your Steam API key is stored on this server. Use a dedicated key or one with minimal permissions.</div>
+      <form method="POST" action="/web/steam">
+        <div class="field"><label>SteamID64 <a href="https://steamid.io" target="_blank">↗ find yours</a></label><input name="steam_id" value="${h(user.steam_id ?? "")}" placeholder="76561198xxxxxxxxx"><p style="font-size:11px;color:var(--sub);margin-top:4px">Go to <a href="https://steamid.io" target="_blank">steamid.io</a>, enter your Steam profile URL or username, copy the <strong>steamID64</strong> value.</p></div>
+        <div class="field"><label>Steam Web API Key <a href="https://steamcommunity.com/dev/apikey" target="_blank">↗</a></label><input name="steam_api_key" type="password" value="${user.steam_api_key ? "••••••••" : ""}" placeholder="Leave blank to keep current" autocomplete="off"></div>
+        <button type="submit">Save &amp; sync Steam now</button>
+      </form>
+
+      <h3>Library</h3>
+      ${dashboardTabsHtml(hydraGames, steamGames, Boolean(user.steam_id))}
+
+      <h3>API access</h3>
+      <p style="font-size:12px;color:var(--sub);margin-bottom:8px">Use this URL in Hydra Launcher settings:</p>
+      <div class="token-box">${h(process.env.PUBLIC_URL ?? "http://localhost:" + (process.env.PORT ?? "3000"))}</div>
+
+      <div style="margin-top:24px">
+        <a href="/u/${h(user.username)}" target="_blank" class="btn btn-ghost" style="display:inline-block;padding:8px 14px;font-size:12px">View public profile ↗</a>
+        &nbsp;
+        <a href="/web/logout" style="font-size:12px;color:var(--sub)">Sign out</a>
+      </div>
+      </div>
+    </div>
+
+    <!-- Crop modal -->
+    <div id="crop-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1000;align-items:center;justify-content:center">
+      <div style="background:var(--bg2);border-radius:10px;padding:20px;width:340px;max-width:90vw">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">Crop avatar</div>
+        <div style="position:relative;width:300px;height:300px;overflow:hidden;border-radius:8px;background:#000;margin:0 auto">
+          <img id="crop-img" style="position:absolute;cursor:move;max-width:none;user-select:none">
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+          <label style="font-size:11px;color:var(--sub);flex-shrink:0">Zoom</label>
+          <input type="range" id="crop-zoom" min="0.5" max="3" step="0.01" value="1" style="flex:1">
+          <label style="font-size:11px;color:var(--sub);flex-shrink:0">Rotate</label>
+          <input type="range" id="crop-rotate" min="-180" max="180" step="1" value="0" style="flex:1">
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
+          <button onclick="closeCrop()" style="background:var(--bg3);color:var(--sub)">Cancel</button>
+          <button onclick="applyCrop()">Save avatar</button>
+        </div>
+      </div>
+    </div>
+
+    <script>${DASHBOARD_JS}</script>
+  `, accent, user.custom_css || "");
+}
+const DEFAULT_PROFILE_CSS = `*{box-sizing:border-box;margin:0;padding:0}body{background:#111;color:#e1e1e1;font-family:"Inter",system-ui,sans-serif;font-size:14px;min-height:100vh}a{color:inherit;text-decoration:none}.card.wide{max-width:100%;border-radius:0;border:none;background:transparent}.card.wide>div:first-child{height:220px!important;border-radius:0}.card.wide>div:nth-child(2){max-width:960px;margin:0 auto;padding:0 32px 48px!important}.card.wide>div:nth-child(2)>div:first-child{margin-top:-56px!important;margin-bottom:24px!important;align-items:flex-end}.card.wide>div:nth-child(2)>div:first-child img,.card.wide>div:nth-child(2)>div:first-child>div:first-child{width:96px!important;height:96px!important;border-radius:12px!important;border:3px solid #111!important;box-shadow:0 4px 24px rgba(0,0,0,.6)}.card.wide h1{font-size:22px;font-weight:700;letter-spacing:-.3px;color:#fff}.card.wide h2{font-size:13px;font-weight:400;color:#888;margin-top:2px}.card.wide>div:nth-child(2)>div:nth-child(2){background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:16px 24px;gap:32px!important;margin:0 0 24px!important;display:inline-flex!important}.card.wide>div:nth-child(2)>div:nth-child(2)>div{text-align:center}.card.wide>div:nth-child(2)>div:nth-child(2) span:first-child{font-size:20px!important;font-weight:700}.tab-btn{background:transparent;border:none;border-bottom:2px solid transparent;color:#888;font-size:13px;font-weight:500;padding:8px 4px;cursor:pointer;transition:color .15s,border-color .15s}.tab-btn.active,.tab-btn:hover{color:var(--btn-text,#111);border-color:var(--accent,#8b5cf6)}.game-grid{display:grid!important;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:16px}.game-item{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;overflow:hidden;transition:border-color .15s,transform .15s;cursor:default}.game-item:hover{border-color:var(--accent,#8b5cf6);transform:translateY(-2px)}.game-item img{width:100%;aspect-ratio:3/2;object-fit:cover;display:block}.game-item>div{padding:8px 10px}.game-item strong{font-size:12px;font-weight:500;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.game-item span{font-size:11px;color:#666}.card.wide p:last-child{color:#444!important;margin-top:32px!important}.card.wide p:last-child a{color:var(--accent,#8b5cf6)}`;
+function fmtDuration(seconds) {
+    if (seconds < 60)
+        return "just now";
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+function publicProfilePage(user, games, currentGame) {
+    const accent = user.accent_color || "#7b68ee";
+    const totalHours = Math.floor(games.reduce((s, g) => s + g.play_time_in_seconds, 0) / 3600);
+    const hydraGames = [...games].filter(g => g.source !== "steam_sync")
+        .sort((a, b) => (b.is_pinned ?? 0) - (a.is_pinned ?? 0) || b.play_time_in_seconds - a.play_time_in_seconds);
+    const steamGames = [...games].filter(g => g.source === "steam_sync")
+        .sort((a, b) => (b.is_pinned ?? 0) - (a.is_pinned ?? 0) || b.play_time_in_seconds - a.play_time_in_seconds);
+    const steamHours = Math.floor(steamGames.reduce((s, g) => s + g.play_time_in_seconds, 0) / 3600);
+    const currentGameStat = currentGame
+        ? `<div><span style="color:${accent};font-weight:600">${h(currentGame.title)}</span><br><span style="color:var(--sub)">currently playing</span></div>`
+        : "";
+    return page(`@${user.username}`, `
+    <div class="card wide" style="padding:0;overflow:hidden">
+      ${user.background_image_url ? `<div style="height:120px;background:url('${h(user.background_image_url)}') center/cover no-repeat;position:relative"></div>` : `<div style="height:60px;background:var(--bg3)"></div>`}
+      <div style="padding:0 32px 32px">
+        <div style="display:flex;align-items:flex-end;gap:16px;margin-top:${user.background_image_url ? "-40px" : "-20px"};margin-bottom:16px;position:relative;z-index:1">
+          ${user.profile_image_url
+        ? `<img src="${h(user.profile_image_url)}" style="width:72px;height:72px;border-radius:50%;border:3px solid var(--bg2);object-fit:cover;flex-shrink:0">`
+        : `<div style="width:72px;height:72px;border-radius:50%;border:3px solid var(--bg2);background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0">⬡</div>`}
+          <div>
+            <h1 style="margin:0">⬡ ${h(user.display_name || user.username)}</h1>
+            <h2 style="margin:0">@${h(user.username)}${user.bio ? ` · ${h(user.bio)}` : ""}</h2>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:24px;margin:16px 0;font-size:13px;flex-wrap:wrap">
+          <div><span style="color:${accent};font-size:18px;font-weight:bold">${games.length}</span><br><span style="color:var(--sub)">games</span></div>
+          <div><span style="color:${accent};font-size:18px;font-weight:bold">${totalHours.toLocaleString()}</span><br><span style="color:var(--sub)">total hours</span></div>
+          ${user.steam_id ? `<div><span style="color:${accent};font-size:18px;font-weight:bold">${steamHours.toLocaleString()}</span><br><span style="color:var(--sub)">steam hours</span></div>` : ""}
+          ${currentGameStat}
+        </div>
+        ${user.show_library !== 0 ? tabsHtml(hydraGames, steamGames, Boolean(user.steam_id), user.show_recent_activity !== 0, parseSectionsOrder(user.profile_sections_order)) : ""}
+        <p style="font-size:11px;color:var(--sub);margin-top:16px">Powered by <a href="https://github.com/entitybtw/hydra-selfhosted">Hydra Self-Hosted</a></p>
+      </div>
+    </div>
+  `, accent, DEFAULT_PROFILE_CSS + (user.custom_css || ""));
+}
+function getUserFromCookie(req) {
+    const token = req.cookies?.["web_token"];
+    if (!token)
+        return null;
+    try {
+        const userId = (0, auth_1.verifyToken)(token, "access");
+        return db_1.db.prepare("SELECT * FROM users WHERE id = ?").get(userId);
+    }
+    catch {
+        return null;
+    }
+}
+async function webRoutes(app) {
+    app.get("/", async (req, reply) => {
+        const user = getUserFromCookie(req);
+        if (user)
+            return reply.redirect("/web/dashboard");
+        const gate = req.cookies?.["gate_ok"];
+        if (gate !== "1")
+            return reply.type("text/html").send(tokenGatePage());
+        const launcher = req.query.launcher === "1";
+        return reply.type("text/html").send(loginPage(undefined, launcher));
+    });
+    // Called by launcher to set gate cookie without exposing token in URL
+    app.post("/web/launcher-gate", {
+        config: { rawBody: true },
+    }, async (req, reply) => {
+        const secret = process.env.API_TOKEN;
+        if (!secret || req.body?.token !== secret) {
+            return reply.code(403).send({ error: "forbidden" });
+        }
+        return reply
+            .setCookie("gate_ok", "1", { path: "/", httpOnly: true, maxAge: 60 * 60 * 24 * 7 })
+            .send({ ok: true });
+    });
+    // Auto-login via launcher userToken
+    app.post("/web/auto-login", {
+        config: { rawBody: true },
+    }, async (req, reply) => {
+        const userToken = req.body?.userToken;
+        if (!userToken)
+            return reply.code(400).send({ error: "missing userToken" });
+        let userId;
+        try {
+            userId = (0, auth_1.verifyToken)(userToken, "access");
+        }
+        catch (e) {
+            if (e?.name !== "TokenExpiredError")
+                return reply.code(403).send({ error: "invalid token" });
+            const jwt = await Promise.resolve().then(() => __importStar(require("jsonwebtoken")));
+            const decoded = jwt.default.decode(userToken);
+            userId = decoded?.sub;
+            if (!userId)
+                return reply.code(403).send({ error: "invalid token" });
+        }
+        const user = db_1.db.prepare("SELECT id FROM users WHERE id = ?").get(userId);
+        if (!user)
+            return reply.code(404).send({ error: "user not found" });
+        const webToken = (0, auth_1.signAccess)(userId);
+        return reply
+            .setCookie("gate_ok", "1", { path: "/", httpOnly: true, maxAge: 60 * 60 * 24 * 7 })
+            .setCookie("web_token", webToken, { path: "/", httpOnly: true, maxAge: 60 * 60 * 24 * 30 })
+            .send({ ok: true });
+    });
+    app.post("/web/gate", {
+        config: { rawBody: true },
+    }, async (req, reply) => {
+        const secret = process.env.API_TOKEN;
+        if (!secret || req.body?.instance_token !== secret) {
+            return reply.type("text/html").send(tokenGatePage("Invalid token."));
+        }
+        return reply
+            .setCookie("gate_ok", "1", { path: "/", httpOnly: true, maxAge: 60 * 60 * 24 * 7 })
+            .redirect("/");
+    });
+    // Login / register form handler
+    app.post("/web/login", {
+        config: { rawBody: true },
+    }, async (req, reply) => {
+        const { username, password, action, launcher } = req.body ?? {};
+        const isLauncher = launcher === "1";
+        if (action === "register") {
+            if (!username || !password)
+                return reply.type("text/html").send(loginPage("Username and password required.", isLauncher));
+            const existing = db_1.db.prepare("SELECT id FROM users WHERE username = ?").get(username);
+            if (existing)
+                return reply.type("text/html").send(loginPage("Username already taken.", isLauncher));
+            const id = node_crypto_1.default.randomUUID();
+            db_1.db.prepare("INSERT INTO users (id, username, password_hash, display_name) VALUES (?,?,?,?)")
+                .run(id, username, hashPassword(password), username);
+            const token = (0, auth_1.signAccess)(id);
+            if (isLauncher)
+                return reply.redirect(`hydra-self-hosted://token/${token}`);
+            return reply
+                .setCookie("web_token", token, { path: "/", httpOnly: true, maxAge: 60 * 60 * 24 * 30 })
+                .redirect("/web/dashboard");
+        }
+        const user = db_1.db.prepare("SELECT id, password_hash FROM users WHERE username = ?")
+            .get(username);
+        if (!user || !verifyPassword(password, user.password_hash)) {
+            return reply.type("text/html").send(loginPage("Invalid username or password.", isLauncher));
+        }
+        const token = (0, auth_1.signAccess)(user.id);
+        if (isLauncher)
+            return reply.redirect(`hydra-self-hosted://token/${token}`);
+        return reply
+            .setCookie("web_token", token, { path: "/", httpOnly: true, maxAge: 60 * 60 * 24 * 30 })
+            .redirect("/web/dashboard");
+    });
+    // Dashboard
+    app.get("/web/dashboard", async (req, reply) => {
+        const user = getUserFromCookie(req);
+        if (!user)
+            return reply.redirect("/");
+        const games = db_1.db.prepare("SELECT * FROM games WHERE user_id = ? AND is_deleted = 0").all(user.id);
+        return reply.type("text/html").send(dashboardPage(user, games));
+    });
+    // Update profile
+    app.post("/web/profile", {
+        config: { rawBody: true },
+    }, async (req, reply) => {
+        const user = getUserFromCookie(req);
+        if (!user)
+            return reply.redirect("/");
+        const { username, display_name, bio, accent_color, accent_color_hex, custom_css, show_recent_activity, show_library, profile_sections_order } = req.body ?? {};
+        const accent = (/^#[0-9a-fA-F]{6}$/.test(accent_color_hex ?? "") ? accent_color_hex
+            : /^#[0-9a-fA-F]{6}$/.test(accent_color ?? "") ? accent_color : null);
+        const newUsername = (username ?? "").replace(/[^a-zA-Z0-9_]/g, "").slice(0, 32) || user.username;
+        if (newUsername !== user.username) {
+            const taken = db_1.db.prepare("SELECT id FROM users WHERE username = ? AND id != ?").get(newUsername, user.id);
+            if (taken) {
+                const games = db_1.db.prepare("SELECT * FROM games WHERE user_id = ? AND is_deleted = 0").all(user.id);
+                return reply.type("text/html").send(dashboardPage(user, games, "Username already taken.", "err"));
+            }
+        }
+        db_1.db.prepare("UPDATE users SET username = ?, display_name = ?, bio = ?, accent_color = ?, custom_css = ?, show_recent_activity = ?, show_library = ?, profile_sections_order = ? WHERE id = ?")
+            .run(newUsername, (display_name ?? "").slice(0, 64), (bio ?? "").slice(0, 200), accent, (custom_css ?? "").slice(0, 8000), show_recent_activity === "1" ? 1 : 0, show_library === "1" ? 1 : 0, JSON.stringify(parseSectionsOrder(profile_sections_order ?? null)), user.id);
+        const updated = db_1.db.prepare("SELECT * FROM users WHERE id = ?").get(user.id);
+        const games = db_1.db.prepare("SELECT * FROM games WHERE user_id = ? AND is_deleted = 0").all(user.id);
+        return reply.type("text/html").send(dashboardPage(updated, games, "Profile updated.", "ok"));
+    });
+    // Steam settings + immediate sync
+    app.post("/web/steam", {
+        config: { rawBody: true },
+    }, async (req, reply) => {
+        const user = getUserFromCookie(req);
+        if (!user)
+            return reply.redirect("/");
+        const { steam_id, steam_api_key } = req.body ?? {};
+        const newKey = steam_api_key && !steam_api_key.startsWith("•") ? steam_api_key : user.steam_api_key;
+        db_1.db.prepare("UPDATE users SET steam_id = ?, steam_api_key = ? WHERE id = ?")
+            .run(steam_id || null, newKey || null, user.id);
+        await (0, steam_sync_1.syncSteamGames)(user.id).catch(() => { });
+        const updated = db_1.db.prepare("SELECT * FROM users WHERE id = ?").get(user.id);
+        const games = db_1.db.prepare("SELECT * FROM games WHERE user_id = ? AND is_deleted = 0").all(user.id);
+        return reply.type("text/html").send(dashboardPage(updated, games, "Steam synced.", "ok"));
+    });
+    // Change password
+    app.post("/web/password", {
+        config: { rawBody: true },
+    }, async (req, reply) => {
+        const user = getUserFromCookie(req);
+        if (!user)
+            return reply.redirect("/");
+        const { current_password, new_password } = req.body ?? {};
+        const row = db_1.db.prepare("SELECT password_hash FROM users WHERE id = ?").get(user.id);
+        if (!verifyPassword(current_password ?? "", row.password_hash)) {
+            const games = db_1.db.prepare("SELECT * FROM games WHERE user_id = ? AND is_deleted = 0").all(user.id);
+            return reply.type("text/html").send(dashboardPage(user, games, "Current password is incorrect.", "err"));
+        }
+        if (!new_password || new_password.length < 6) {
+            const games = db_1.db.prepare("SELECT * FROM games WHERE user_id = ? AND is_deleted = 0").all(user.id);
+            return reply.type("text/html").send(dashboardPage(user, games, "New password must be at least 6 characters.", "err"));
+        }
+        db_1.db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(new_password), user.id);
+        const games = db_1.db.prepare("SELECT * FROM games WHERE user_id = ? AND is_deleted = 0").all(user.id);
+        return reply.type("text/html").send(dashboardPage(user, games, "Password changed.", "ok"));
+    });
+    // Pin / unpin game from dashboard
+    app.post("/web/favorite", { config: { rawBody: true } }, async (req, reply) => {
+        const user = getUserFromCookie(req);
+        if (!user)
+            return reply.redirect("/");
+        const { shop, object_id } = req.body ?? {};
+        if (shop && object_id)
+            db_1.db.prepare("UPDATE games SET is_favorite = 1 WHERE user_id = ? AND object_id = ? AND shop = ?").run(user.id, object_id, shop);
+        return reply.redirect("/web/dashboard");
+    });
+    app.post("/web/unfavorite", { config: { rawBody: true } }, async (req, reply) => {
+        const user = getUserFromCookie(req);
+        if (!user)
+            return reply.redirect("/");
+        const { shop, object_id } = req.body ?? {};
+        if (shop && object_id)
+            db_1.db.prepare("UPDATE games SET is_favorite = 0 WHERE user_id = ? AND object_id = ? AND shop = ?").run(user.id, object_id, shop);
+        return reply.redirect("/web/dashboard");
+    });
+    app.post("/web/pin", { config: { rawBody: true } }, async (req, reply) => {
+        const user = getUserFromCookie(req);
+        if (!user)
+            return reply.redirect("/");
+        const { shop, object_id } = req.body ?? {};
+        if (shop && object_id) {
+            const now = Math.floor(Date.now() / 1000);
+            db_1.db.prepare("UPDATE games SET is_pinned = 1, pinned_at = ? WHERE user_id = ? AND object_id = ? AND shop = ?").run(now, user.id, object_id, shop);
+        }
+        return reply.redirect("/web/dashboard");
+    });
+    app.post("/web/unpin", { config: { rawBody: true } }, async (req, reply) => {
+        const user = getUserFromCookie(req);
+        if (!user)
+            return reply.redirect("/");
+        const { shop, object_id } = req.body ?? {};
+        if (shop && object_id) {
+            db_1.db.prepare("UPDATE games SET is_pinned = 0, pinned_at = NULL WHERE user_id = ? AND object_id = ? AND shop = ?").run(user.id, object_id, shop);
+        }
+        return reply.redirect("/web/dashboard");
+    });
+    // Upload avatar / banner
+    app.post("/web/upload-avatar", async (req, reply) => {
+        const user = getUserFromCookie(req);
+        if (!user)
+            return reply.redirect("/");
+        const data = await req.file();
+        if (!data)
+            return reply.redirect("/web/dashboard");
+        const ext = data.mimetype.split("/")[1]?.replace("jpeg", "jpg") ?? "jpg";
+        const filename = `${node_crypto_1.default.randomUUID()}.${ext}`;
+        await promises_1.default.writeFile(node_path_1.default.join(db_1.IMAGES_DIR, filename), await data.toBuffer());
+        db_1.db.prepare("UPDATE users SET profile_image_url = ? WHERE id = ?").run(`/images/${filename}`, user.id);
+        return reply.redirect("/web/dashboard");
+    });
+    app.post("/web/upload-banner", async (req, reply) => {
+        const user = getUserFromCookie(req);
+        if (!user)
+            return reply.redirect("/");
+        const data = await req.file();
+        if (!data)
+            return reply.redirect("/web/dashboard");
+        const ext = data.mimetype.split("/")[1]?.replace("jpeg", "jpg") ?? "jpg";
+        const filename = `${node_crypto_1.default.randomUUID()}.${ext}`;
+        await promises_1.default.writeFile(node_path_1.default.join(db_1.IMAGES_DIR, filename), await data.toBuffer());
+        db_1.db.prepare("UPDATE users SET background_image_url = ? WHERE id = ?").run(`/images/${filename}`, user.id);
+        return reply.redirect("/web/dashboard");
+    });
+    app.post("/web/remove-banner", async (req, reply) => {
+        const user = getUserFromCookie(req);
+        if (!user)
+            return reply.code(401).send();
+        db_1.db.prepare("UPDATE users SET background_image_url = NULL WHERE id = ?").run(user.id);
+        return reply.send({ ok: true });
+    });
+    // Logout
+    app.get("/web/logout", async (_req, reply) => {
+        return reply.clearCookie("web_token", { path: "/" }).redirect("/");
+    });
+    // Public profile — HTML
+    app.get("/u/:username", async (req, reply) => {
+        const user = db_1.db.prepare("SELECT * FROM users WHERE username = ?")
+            .get(req.params.username);
+        if (!user)
+            return reply.code(404).type("text/plain").send("User not found\n");
+        const games = db_1.db.prepare("SELECT * FROM games WHERE user_id = ? AND is_deleted = 0")
+            .all(user.id);
+        if (req.query.format === "json") {
+            const totalSeconds = games.reduce((s, g) => s + g.play_time_in_seconds, 0);
+            return reply.send({
+                username: user.username,
+                displayName: user.display_name,
+                bio: user.bio,
+                steamId: user.steam_id ?? undefined,
+                games: games.length,
+                totalHours: Math.floor(totalSeconds / 3600),
+            });
+        }
+        const currentGame = await resolveCurrentGame(user, user.id);
+        return reply.type("text/html").send(publicProfilePage(user, games, currentGame));
+    });
+}
