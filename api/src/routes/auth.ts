@@ -83,7 +83,9 @@ export async function authRoutes(app: FastifyInstance) {
   );
 
   app.post("/auth/logout", async () => {
-    return {};
+    // Token invalidation: in a stateless JWT setup, the client simply discards the token.
+    // For a production server, you would add the token to a blocklist.
+    return { ok: true };
   });
 
   // Verify instance token — Hydra calls this when saving settings

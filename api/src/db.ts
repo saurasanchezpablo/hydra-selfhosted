@@ -97,6 +97,33 @@ db.exec(`
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch())
   );
+  CREATE TABLE IF NOT EXISTS blocks (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    blocked_user_id TEXT NOT NULL REFERENCES users(id),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    UNIQUE(user_id, blocked_user_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS badges (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    badge_type TEXT NOT NULL,
+    badge_data TEXT,
+    unlocked_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+
+  CREATE TABLE IF NOT EXISTS notifications (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL DEFAULT '',
+    data TEXT,
+    is_read INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+
   CREATE TABLE IF NOT EXISTS friendships (
     id TEXT PRIMARY KEY,
     requester_id TEXT NOT NULL REFERENCES users(id),

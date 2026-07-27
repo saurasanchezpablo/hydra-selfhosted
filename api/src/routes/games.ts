@@ -36,8 +36,16 @@ export async function gamesRoutes(app: FastifyInstance) {
   app.get(
     "/games/:shop/:objectId/stats",
     { preHandler: requireAuth },
-    async (req: FastifyRequest<{ Params: { shop: string; objectId: string } }>, reply: FastifyReply) => {
-      return reply.code(404).send({ error: "not found" });
+    async (req: FastifyRequest<{ Params: { shop: string; objectId: string } }>) => {
+      const { userId } = req as any;
+      const { shop, objectId } = req.params;
+      const row = db.prepare("SELECT play_time_in_seconds, last_time_played FROM games WHERE user_id = ? AND object_id = ? AND shop = ?").get(userId, objectId, shop) as any;
+      const totalPlayers = (db.prepare("SELECT COUNT(DISTINCT user_id) as c FROM games WHERE object_id = ? AND shop = ?").get(objectId, shop) as any).c;
+      return {
+        totalPlayTime: row?.play_time_in_seconds ?? 0,
+        lastTimePlayed: row?.last_time_played ?? null,
+        totalPlayers,
+      };
     }
   );
 
@@ -45,14 +53,22 @@ export async function gamesRoutes(app: FastifyInstance) {
     "/games/:shop/:objectId",
     { preHandler: requireAuth },
     async (req: FastifyRequest<{ Params: { shop: string; objectId: string } }>, reply: FastifyReply) => {
-      return reply.code(404).send({ error: "not found" });
+      // Proxy to official Hydra API for game details
+      try {
+        const apiUrl = process.env.OFFICIAL_API_URL ?? "https://api.hydralauncher.com.br";
+        const res = await axios.get(`${apiUrl}/games/${req.params.shop}/${req.params.objectId}`, { timeout: 10000 });
+        return res.data;
+      } catch {
+        return reply.code(404).send({ error: "not found" });
+      }
     }
   );
 
   app.post(
     "/download-sources/changes",
     { preHandler: requireAuth },
-    async () => {
+    async (req: FastifyRequest<{ Body: { downloadSourceIds: string[]; games: Array<{ shop: string; objectId: string }>; since: string } }>) => {
+      // Return empty changes — self-hosted users control sources manually
       return [];
     }
   );

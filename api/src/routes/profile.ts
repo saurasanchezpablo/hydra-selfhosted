@@ -721,33 +721,76 @@ export async function profileRoutes(app: FastifyInstance) {
     return { results, total };
   });
 
-  app.get("/profile/blocks", { preHandler: requireAuth }, async () => {
-    return { blocks: [], total: 0 };
+  app.get("/profile/blocks", { preHandler: requireAuth }, async (req: FastifyRequest<{ Querystring: { take?: string; skip?: string } }>) => {
+    const { userId } = req as any;
+    const take = parseInt(req.query.take ?? "20");
+    const skip = parseInt(req.query.skip ?? "0");
+    const rows = db.prepare("SELECT blocked_user_id FROM blocks WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?").all(userId, take, skip) as any[];
+    const total = (db.prepare("SELECT COUNT(*) as c FROM blocks WHERE user_id = ?").get(userId) as any).c;
+    const users = rows.map((r: any) => {
+      const u = db.prepare("SELECT id, display_name, profile_image_url FROM users WHERE id = ?").get(r.blocked_user_id) as any;
+      return u ? { id: u.id, displayName: u.display_name, profileImageUrl: u.profile_image_url } : null;
+    }).filter(Boolean);
+    return { results: users, total };
   });
 
   app.get("/features", async () => {
-    return [];
+    return ["badges", "blocks", "notifications"];
   });
 
-  app.get("/badges", async () => {
-    return [];
+  app.get("/badges", async (req: FastifyRequest<{ Querystring: { userId?: string } }>) => {
+    const targetUserId = req.query.userId ?? null;
+    const rows = targetUserId
+      ? db.prepare("SELECT * FROM badges WHERE user_id = ? ORDER BY unlocked_at DESC").all(targetUserId)
+      : db.prepare("SELECT * FROM badges ORDER BY unlocked_at DESC").all();
+    return (rows as any[]).map(r => ({
+      id: r.id,
+      name: r.badge_type,
+      displayName: r.badge_type,
+      description: r.badge_data ?? "",
+      icon: null,
+      userId: r.user_id,
+      unlockedAt: new Date(r.unlocked_at * 1000).toISOString(),
+    }));
   });
 
-  // Notification stubs — self-hosted has no social notifications
-  app.get("/profile/notifications", { preHandler: requireAuth }, async () => {
-    return { notifications: [], pagination: { total: 0, take: 20, skip: 0, hasMore: false } };
+  app.get("/profile/notifications", { preHandler: requireAuth }, async (req: FastifyRequest<{ Querystring: { take?: string; skip?: string } }>) => {
+    const { userId } = req as any;
+    const take = parseInt(req.query.take ?? "20");
+    const skip = parseInt(req.query.skip ?? "0");
+    const total = (db.prepare("SELECT COUNT(*) as c FROM notifications WHERE user_id = ?").get(userId) as any).c;
+    const rows = db.prepare("SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?").all(userId, take, skip) as any[];
+    return {
+      notifications: rows.map(r => ({
+        id: r.id,
+        type: r.type,
+        title: r.title,
+        body: r.body,
+        data: r.data ? JSON.parse(r.data) : null,
+        isRead: !!r.is_read,
+        createdAt: new Date(r.created_at * 1000).toISOString(),
+      })),
+      pagination: { total, take, skip, hasMore: skip + take < total },
+    };
   });
-  // /profile/notifications/count is registered in friends.ts
-  app.put("/profile/notifications/:id/read", { preHandler: requireAuth }, async () => {
+  app.put("/profile/notifications/:id/read", { preHandler: requireAuth }, async (req: FastifyRequest<{ Params: { id: string } }>) => {
+    const { userId } = req as any;
+    db.prepare("UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?").run(req.params.id, userId);
     return {};
   });
-  app.delete("/profile/notifications/:id", { preHandler: requireAuth }, async () => {
+  app.delete("/profile/notifications/:id", { preHandler: requireAuth }, async (req: FastifyRequest<{ Params: { id: string } }>) => {
+    const { userId } = req as any;
+    db.prepare("DELETE FROM notifications WHERE id = ? AND user_id = ?").run(req.params.id, userId);
     return {};
   });
-  app.put("/profile/notifications/all/read", { preHandler: requireAuth }, async () => {
+  app.put("/profile/notifications/all/read", { preHandler: requireAuth }, async (req: FastifyRequest) => {
+    const { userId } = req as any;
+    db.prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ?").run(userId);
     return {};
   });
-  app.delete("/profile/notifications/all", { preHandler: requireAuth }, async () => {
+  app.delete("/profile/notifications/all", { preHandler: requireAuth }, async (req: FastifyRequest) => {
+    const { userId } = req as any;
+    db.prepare("DELETE FROM notifications WHERE user_id = ?").run(userId);
     return {};
   });
 }
