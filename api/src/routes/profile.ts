@@ -718,7 +718,7 @@ export async function profileRoutes(app: FastifyInstance) {
         game: { title: game?.title ?? r.object_id, objectId: r.object_id, shop: r.shop },
       };
     });
-    return { results, total };
+    return { reviews: results, totalCount: total };
   });
 
   app.get("/profile/blocks", { preHandler: requireAuth }, async (req: FastifyRequest<{ Querystring: { take?: string; skip?: string } }>) => {

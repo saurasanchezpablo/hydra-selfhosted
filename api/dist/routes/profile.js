@@ -454,7 +454,7 @@ async function profileRoutes(app) {
                 game: { title: game?.title ?? r.object_id, objectId: r.object_id, shop: r.shop },
             };
         });
-        return { results, total };
+        return { reviews: results, totalCount: total };
     });
     app.get("/profile/blocks", { preHandler: auth_1.requireAuth }, async (req) => {
         const { userId } = req;
