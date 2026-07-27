@@ -694,8 +694,31 @@ export async function profileRoutes(app: FastifyInstance) {
     }
   );
 
-  app.get("/users/:userId/reviews", async () => {
-    return { results: [], total: 0 };
+  app.get("/users/:userId/reviews", async (req: FastifyRequest<{ Params: { userId: string }; Querystring: { take?: string; skip?: string } }>) => {
+    const take = parseInt(req.query.take ?? "20");
+    const skip = parseInt(req.query.skip ?? "0");
+    const rows = db.prepare("SELECT * FROM reviews WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?").all(req.params.userId, take, skip) as any[];
+    const total = (db.prepare("SELECT COUNT(*) as c FROM reviews WHERE user_id = ?").get(req.params.userId) as any).c;
+    const currentUserId = (req as any).user?.id ?? null;
+    const results = rows.map(r => {
+      const user = db.prepare("SELECT id, display_name, profile_image_url FROM users WHERE id = ?").get(r.user_id) as any;
+      const answerCount = (db.prepare("SELECT COUNT(*) as c FROM review_answers WHERE review_id = ?").get(r.id) as any).c;
+      const userVote = currentUserId ? (db.prepare("SELECT vote_type FROM review_votes WHERE user_id = ? AND target_id = ?").get(currentUserId, r.id) as any) : null;
+      const game = db.prepare("SELECT title FROM games WHERE user_id = ? AND object_id = ? AND shop = ?").get(r.user_id, r.object_id, r.shop) as any;
+      return {
+        id: r.id, reviewHtml: r.review_html, score: r.score,
+        createdAt: new Date(r.created_at * 1000).toISOString(),
+        updatedAt: new Date(r.updated_at * 1000).toISOString(),
+        upvotes: r.upvotes, downvotes: r.downvotes, answerCount, answers: [],
+        isBlocked: false,
+        hasUpvoted: userVote?.vote_type === "upvote",
+        hasDownvoted: userVote?.vote_type === "downvote",
+        user: { id: user?.id ?? r.user_id, displayName: user?.display_name ?? "", profileImageUrl: user?.profile_image_url ?? null },
+        translations: {}, detectedLanguage: null,
+        game: { title: game?.title ?? r.object_id, objectId: r.object_id, shop: r.shop },
+      };
+    });
+    return { results, total };
   });
 
   app.get("/profile/blocks", { preHandler: requireAuth }, async () => {
