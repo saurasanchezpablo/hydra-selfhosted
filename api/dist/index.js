@@ -10,6 +10,7 @@ const auth_1 = require("./routes/auth");
 const profile_1 = require("./routes/profile");
 const games_1 = require("./routes/games");
 const artifacts_1 = require("./routes/artifacts");
+const cloud_saves_1 = require("./routes/cloud-saves");
 const images_1 = require("./routes/images");
 const web_1 = require("./routes/web");
 const friends_1 = require("./routes/friends");
@@ -30,6 +31,9 @@ app.addContentTypeParser(/^image\//, { parseAs: "buffer" }, (_req, body, done) =
 app.addContentTypeParser("application/octet-stream", { parseAs: "buffer" }, (_req, body, done) => {
     done(null, body);
 });
+app.addContentTypeParser("*", { parseAs: "buffer" }, (_req, body, done) => {
+    done(null, body);
+});
 app.addContentTypeParser("application/x-www-form-urlencoded", { parseAs: "string" }, (_req, body, done) => {
     const params = new URLSearchParams(body);
     const result = {};
@@ -41,6 +45,7 @@ app.register(auth_1.authRoutes);
 app.register(profile_1.profileRoutes);
 app.register(games_1.gamesRoutes);
 app.register(artifacts_1.artifactsRoutes);
+app.register(cloud_saves_1.cloudSavesRoutes);
 app.register(images_1.imagesRoutes);
 app.register(web_1.webRoutes);
 app.register(friends_1.friendsRoutes);

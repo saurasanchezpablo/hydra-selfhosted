@@ -5,6 +5,7 @@ import { authRoutes } from "./routes/auth";
 import { profileRoutes } from "./routes/profile";
 import { gamesRoutes } from "./routes/games";
 import { artifactsRoutes } from "./routes/artifacts";
+import { cloudSavesRoutes } from "./routes/cloud-saves";
 import { imagesRoutes } from "./routes/images";
 import { webRoutes } from "./routes/web";
 import { friendsRoutes } from "./routes/friends";
@@ -29,6 +30,9 @@ app.addContentTypeParser(/^image\//, { parseAs: "buffer" }, (_req, body, done) =
 app.addContentTypeParser("application/octet-stream", { parseAs: "buffer" }, (_req, body, done) => {
   done(null, body);
 });
+app.addContentTypeParser("*", { parseAs: "buffer" }, (_req, body, done) => {
+  done(null, body);
+});
 app.addContentTypeParser("application/x-www-form-urlencoded", { parseAs: "string" }, (_req, body: string, done) => {
   const params = new URLSearchParams(body);
   const result: Record<string, string> = {};
@@ -40,6 +44,7 @@ app.register(authRoutes);
 app.register(profileRoutes);
 app.register(gamesRoutes);
 app.register(artifactsRoutes);
+app.register(cloudSavesRoutes);
 app.register(imagesRoutes);
 app.register(webRoutes);
 app.register(friendsRoutes);

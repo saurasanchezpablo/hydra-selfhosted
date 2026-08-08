@@ -5,9 +5,11 @@ import fs from "node:fs";
 const DATA_DIR = process.env.DATA_DIR ?? "/data";
 export const ARTIFACTS_DIR = path.join(DATA_DIR, "artifacts");
 export const IMAGES_DIR = path.join(DATA_DIR, "images");
+export const CLOUD_SAVES_DIR = path.join(DATA_DIR, "cloud-saves");
 
 fs.mkdirSync(ARTIFACTS_DIR, { recursive: true });
 fs.mkdirSync(IMAGES_DIR, { recursive: true });
+fs.mkdirSync(CLOUD_SAVES_DIR, { recursive: true });
 
 export const db = new Database(path.join(DATA_DIR, "hydra.db"));
 
@@ -37,8 +39,8 @@ try { db.exec(`ALTER TABLE users ADD COLUMN profile_sections_order TEXT`); } cat
 try { db.exec(`ALTER TABLE games ADD COLUMN session_started_at INTEGER`); } catch {}
 
 // Fix image URLs stored as absolute paths
-db.exec(`UPDATE users SET profile_image_url = REPLACE(profile_image_url, '/data/images/', '/images/') WHERE profile_image_url LIKE '/data/%'`);
-db.exec(`UPDATE users SET background_image_url = REPLACE(background_image_url, '/data/images/', '/images/') WHERE background_image_url LIKE '/data/%'`);
+try { db.exec(`UPDATE users SET profile_image_url = REPLACE(profile_image_url, '/data/images/', '/images/') WHERE profile_image_url LIKE '/data/%'`); } catch {}
+try { db.exec(`UPDATE users SET background_image_url = REPLACE(background_image_url, '/data/images/', '/images/') WHERE background_image_url LIKE '/data/%'`); } catch {}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
@@ -132,4 +134,43 @@ db.exec(`
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     UNIQUE(requester_id, addressee_id)
   );
+`);
+
+try { db.exec(`ALTER TABLE users ADD COLUMN roles TEXT`); } catch {}
+try { db.exec(`ALTER TABLE users ADD COLUMN is_banned INTEGER NOT NULL DEFAULT 0`); } catch {}
+
+// Cloud Saves v2 tables
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cs_snapshots (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    shop TEXT NOT NULL,
+    object_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    aggregate_hash TEXT NOT NULL,
+    file_count INTEGER NOT NULL DEFAULT 0,
+    total_size_bytes INTEGER NOT NULL DEFAULT 0,
+    variants TEXT NOT NULL DEFAULT '[]',
+    files TEXT NOT NULL DEFAULT '[]',
+    custom_path_raw_paths TEXT NOT NULL DEFAULT '[]',
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_cs_snapshots_game
+    ON cs_snapshots (user_id, shop, object_id);
+
+  CREATE TABLE IF NOT EXISTS cs_pending (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    shop TEXT NOT NULL,
+    object_id TEXT NOT NULL,
+    snapshot_hash TEXT NOT NULL,
+    base_version INTEGER NOT NULL DEFAULT 0,
+    variants TEXT NOT NULL DEFAULT '[]',
+    files TEXT NOT NULL DEFAULT '[]',
+    custom_path_raw_paths TEXT NOT NULL DEFAULT '[]',
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    expires_at INTEGER NOT NULL DEFAULT (unixepoch() + 7200)
+  );
+  CREATE INDEX IF NOT EXISTS idx_cs_pending_user ON cs_pending (user_id);
 `);

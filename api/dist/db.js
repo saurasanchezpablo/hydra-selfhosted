@@ -3,15 +3,17 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.db = exports.IMAGES_DIR = exports.ARTIFACTS_DIR = void 0;
+exports.db = exports.CLOUD_SAVES_DIR = exports.IMAGES_DIR = exports.ARTIFACTS_DIR = void 0;
 const better_sqlite3_1 = __importDefault(require("better-sqlite3"));
 const node_path_1 = __importDefault(require("node:path"));
 const node_fs_1 = __importDefault(require("node:fs"));
 const DATA_DIR = process.env.DATA_DIR ?? "/data";
 exports.ARTIFACTS_DIR = node_path_1.default.join(DATA_DIR, "artifacts");
 exports.IMAGES_DIR = node_path_1.default.join(DATA_DIR, "images");
+exports.CLOUD_SAVES_DIR = node_path_1.default.join(DATA_DIR, "cloud-saves");
 node_fs_1.default.mkdirSync(exports.ARTIFACTS_DIR, { recursive: true });
 node_fs_1.default.mkdirSync(exports.IMAGES_DIR, { recursive: true });
+node_fs_1.default.mkdirSync(exports.CLOUD_SAVES_DIR, { recursive: true });
 exports.db = new better_sqlite3_1.default(node_path_1.default.join(DATA_DIR, "hydra.db"));
 exports.db.pragma("journal_mode = WAL");
 exports.db.pragma("foreign_keys = ON");
@@ -62,8 +64,14 @@ try {
 }
 catch { }
 // Fix image URLs stored as absolute paths
-exports.db.exec(`UPDATE users SET profile_image_url = REPLACE(profile_image_url, '/data/images/', '/images/') WHERE profile_image_url LIKE '/data/%'`);
-exports.db.exec(`UPDATE users SET background_image_url = REPLACE(background_image_url, '/data/images/', '/images/') WHERE background_image_url LIKE '/data/%'`);
+try {
+    exports.db.exec(`UPDATE users SET profile_image_url = REPLACE(profile_image_url, '/data/images/', '/images/') WHERE profile_image_url LIKE '/data/%'`);
+}
+catch { }
+try {
+    exports.db.exec(`UPDATE users SET background_image_url = REPLACE(background_image_url, '/data/images/', '/images/') WHERE background_image_url LIKE '/data/%'`);
+}
+catch { }
 exports.db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -156,4 +164,47 @@ exports.db.exec(`
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     UNIQUE(requester_id, addressee_id)
   );
+`);
+try {
+    exports.db.exec(`ALTER TABLE users ADD COLUMN roles TEXT`);
+}
+catch { }
+try {
+    exports.db.exec(`ALTER TABLE users ADD COLUMN is_banned INTEGER NOT NULL DEFAULT 0`);
+}
+catch { }
+// Cloud Saves v2 tables
+exports.db.exec(`
+  CREATE TABLE IF NOT EXISTS cs_snapshots (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    shop TEXT NOT NULL,
+    object_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    aggregate_hash TEXT NOT NULL,
+    file_count INTEGER NOT NULL DEFAULT 0,
+    total_size_bytes INTEGER NOT NULL DEFAULT 0,
+    variants TEXT NOT NULL DEFAULT '[]',
+    files TEXT NOT NULL DEFAULT '[]',
+    custom_path_raw_paths TEXT NOT NULL DEFAULT '[]',
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_cs_snapshots_game
+    ON cs_snapshots (user_id, shop, object_id);
+
+  CREATE TABLE IF NOT EXISTS cs_pending (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    shop TEXT NOT NULL,
+    object_id TEXT NOT NULL,
+    snapshot_hash TEXT NOT NULL,
+    base_version INTEGER NOT NULL DEFAULT 0,
+    variants TEXT NOT NULL DEFAULT '[]',
+    files TEXT NOT NULL DEFAULT '[]',
+    custom_path_raw_paths TEXT NOT NULL DEFAULT '[]',
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    expires_at INTEGER NOT NULL DEFAULT (unixepoch() + 7200)
+  );
+  CREATE INDEX IF NOT EXISTS idx_cs_pending_user ON cs_pending (user_id);
 `);
