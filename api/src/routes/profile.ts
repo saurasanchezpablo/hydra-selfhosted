@@ -793,4 +793,60 @@ export async function profileRoutes(app: FastifyInstance) {
     db.prepare("DELETE FROM notifications WHERE user_id = ?").run(userId);
     return {};
   });
+
+  // Helper: check if user is admin
+  function isAdmin(userId: string): boolean {
+    const user = db.prepare("SELECT roles FROM users WHERE id = ?").get(userId) as { roles: string | null } | undefined;
+    if (!user?.roles) return false;
+    try {
+      const roles = JSON.parse(user.roles);
+      return Array.isArray(roles) && roles.includes("admin");
+    } catch { return false; }
+  }
+
+  // Global accent color (admin only)
+  app.put("/settings/global-accent-color", { preHandler: requireAuth }, async (
+    req: FastifyRequest<{ Body: { color?: string } }>,
+    reply: FastifyReply
+  ) => {
+    const { userId } = req as any;
+    if (!isAdmin(userId)) return reply.code(403).send({ error: "admin role required" });
+    const color = req.body?.color;
+    if (!color || !/^#[0-9a-fA-F]{6}$/.test(color)) {
+      return reply.code(400).send({ error: "invalid color — use #hex format" });
+    }
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('global_accent_color', ?)").run(color);
+    return { ok: true, color };
+  });
+
+  app.delete("/settings/global-accent-color", { preHandler: requireAuth }, async (
+    req: FastifyRequest,
+    reply: FastifyReply
+  ) => {
+    const { userId } = req as any;
+    if (!isAdmin(userId)) return reply.code(403).send({ error: "admin role required" });
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('global_accent_color', '#d4a574')").run();
+    return { ok: true, color: "#d4a574" };
+  });
+
+  app.get("/settings/global-accent-color", async () => {
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'global_accent_color'").get() as { value: string } | undefined;
+    return { color: row?.value ?? "#d4a574" };
+  });
+
+  // Make user admin (for initial setup — only works if user has no roles yet)
+  app.post("/profile/make-admin", { preHandler: requireAuth }, async (req: FastifyRequest, reply: FastifyReply) => {
+    const { userId } = req as any;
+    const user = db.prepare("SELECT roles FROM users WHERE id = ?").get(userId) as { roles: string | null } | undefined;
+    if (user?.roles) {
+      try {
+        const roles = JSON.parse(user.roles);
+        if (Array.isArray(roles) && roles.length > 0) {
+          return reply.code(403).send({ error: "already has roles" });
+        }
+      } catch {}
+    }
+    db.prepare("UPDATE users SET roles = ? WHERE id = ?").run(JSON.stringify(["admin"]), userId);
+    return { ok: true };
+  });
 }

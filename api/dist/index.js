@@ -18,6 +18,7 @@ const catalogue_1 = require("./routes/catalogue");
 const reviews_1 = require("./routes/reviews");
 const public_api_1 = require("./routes/public-api");
 const docs_1 = require("./routes/docs");
+const passkeys_1 = require("./routes/passkeys");
 const steam_sync_1 = require("./steam-sync");
 const maxSaveSizeMb = Number(process.env.MAX_SAVE_SIZE_MB) || 50;
 const maxSaveSizeBytes = maxSaveSizeMb * 1024 * 1024;
@@ -55,6 +56,7 @@ app.register(catalogue_1.catalogueRoutes);
 app.register(reviews_1.reviewsRoutes);
 app.register(public_api_1.publicApiRoutes);
 app.register(docs_1.docsRoutes);
+app.register(passkeys_1.passkeyRoutes);
 app.get("/health", async () => ({ status: "ok" }));
 const port = parseInt(process.env.PORT ?? "3000", 10);
 app.listen({ port, host: "0.0.0.0" }).then(() => {

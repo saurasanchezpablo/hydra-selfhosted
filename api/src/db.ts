@@ -174,3 +174,28 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_cs_pending_user ON cs_pending (user_id);
 `);
+
+// Passkeys (WebAuthn)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS passkeys (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    credential_id TEXT UNIQUE NOT NULL,
+    public_key TEXT NOT NULL,
+    counter INTEGER NOT NULL DEFAULT 0,
+    transports TEXT NOT NULL DEFAULT '[]',
+    label TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_passkeys_user ON passkeys (user_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_passkeys_credential ON passkeys (credential_id);
+`);
+
+// Global settings (singleton row)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+`);
+try { db.exec(`INSERT OR IGNORE INTO settings (key, value) VALUES ('global_accent_color', '#d4a574')`); } catch {}

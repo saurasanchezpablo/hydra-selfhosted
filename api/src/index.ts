@@ -13,6 +13,7 @@ import { catalogueRoutes } from "./routes/catalogue";
 import { reviewsRoutes } from "./routes/reviews";
 import { publicApiRoutes } from "./routes/public-api";
 import { docsRoutes } from "./routes/docs";
+import { passkeyRoutes } from "./routes/passkeys";
 import { startSteamSyncScheduler } from "./steam-sync";
 
 const maxSaveSizeMb = Number(process.env.MAX_SAVE_SIZE_MB) || 50;
@@ -54,6 +55,7 @@ app.register(catalogueRoutes);
 app.register(reviewsRoutes);
 app.register(publicApiRoutes);
 app.register(docsRoutes);
+app.register(passkeyRoutes);
 
 app.get("/health", async () => ({ status: "ok" }));
 

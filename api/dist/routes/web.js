@@ -451,6 +451,15 @@ function dashboardPage(user, games, msg, msgType = "ok") {
         .sort((a, b) => (b.is_pinned ?? 0) - (a.is_pinned ?? 0) || b.play_time_in_seconds - a.play_time_in_seconds);
     const steamGames = [...games].filter(g => g.source === "steam_sync")
         .sort((a, b) => (b.is_pinned ?? 0) - (a.is_pinned ?? 0) || b.play_time_in_seconds - a.play_time_in_seconds);
+    const isAdmin = (() => {
+        try {
+            const roles = JSON.parse(user.roles || "[]");
+            return Array.isArray(roles) && roles.includes("admin");
+        }
+        catch {
+            return false;
+        }
+    })();
     const DASHBOARD_JS = [
         "const avatarWrap=document.getElementById('avatar-overlay')?.parentElement;",
         "const overlay=document.getElementById('avatar-overlay');",
@@ -471,6 +480,9 @@ function dashboardPage(user, games, msg, msgType = "ok") {
         "function applyCrop(){const canvas=document.createElement('canvas');canvas.width=canvas.height=FRAME;const ctx=canvas.getContext('2d');const z=parseFloat(zoomSlider.value),r=parseFloat(rotSlider.value)*Math.PI/180;ctx.save();ctx.translate(FRAME/2+cropOffX,FRAME/2+cropOffY);ctx.rotate(r);ctx.scale(z,z);ctx.drawImage(cropImg,-cropImg.naturalWidth/2,-cropImg.naturalHeight/2);ctx.restore();canvas.toBlob(blob=>{const fd=new FormData();fd.append('image',blob,'avatar.png');fetch('/web/upload-avatar',{method:'POST',body:fd}).then(()=>location.reload());closeCrop();},'image/png');}",
         "function uploadImg(input){const file=input.files[0];if(!file)return;const fd=new FormData();fd.append('image',file);fetch('/web/upload-banner',{method:'POST',body:fd}).then(()=>location.reload());}",
         "function removeBanner(){fetch('/web/remove-banner',{method:'POST'}).then(()=>location.reload());}",
+        "async function loadPasskeys(){try{const r=await fetch('/web/passkeys/list');const pks=await r.json();const el=document.getElementById('passkey-list');if(!pks.length){el.innerHTML='<span style=\"color:var(--text-2);font-size:12px\">No passkeys registered.</span>';return;}el.innerHTML=pks.map(pk=>'<div style=\"display:flex;align-items:center;justify-content:space-between;background:var(--bg-2);padding:8px 12px;margin-bottom:4px\"><span style=\"font-size:12px\">'+(pk.label||'Passkey')+' <span style=\"color:var(--text-2)\">'+new Date(pk.createdAt).toLocaleDateString()+'</span></span><button onclick=\"deletePasskey(\\''+pk.id+'\\')\" style=\"background:none;border:1px solid var(--border-1);border-radius:0;cursor:pointer;padding:2px 8px;font-size:11px;color:var(--err);font-family:var(--font-mono);font-weight:500;width:auto\">Remove</button></div>').join('');}catch(e){document.getElementById('passkey-list').innerHTML='<span style=\"color:var(--text-2);font-size:12px\">Error loading passkeys</span>';}}",
+        "async function deletePasskey(id){if(!confirm('Remove this passkey?'))return;await fetch('/web/passkeys/'+id,{method:'DELETE'});loadPasskeys();}",
+        "async function registerPasskey(){try{const optsRes=await fetch('/web/passkeys/register/options',{method:'POST',headers:{'Content-Type':'application/json'}});const opts=await optsRes.json();if(opts.error){alert(opts.error);return;}const cred=await navigator.credentials.create({publicKey:opts});const verifyRes=await fetch('/web/passkeys/register/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:cred.id,rawId:btoa(String.fromCharCode.apply(null,new Uint8Array(cred.rawId))),type:cred.type,response:{attestationObject:btoa(String.fromCharCode.apply(null,new Uint8Array(cred.response.attestationObject))),clientDataJSON:btoa(String.fromCharCode.apply(null,new Uint8Array(cred.response.clientDataJSON)))},label:navigator.userAgent.includes('Mobile')?'Mobile device':'Browser'})});const result=await verifyRes.json();if(result.verified){loadPasskeys();}else{alert('Registration failed');}}catch(e){if(e.name!=='NotAllowedError')alert('Passkey error: '+e.message);}}",
     ].join("\n");
     return page("Dashboard", `
     <div class="card wide" style="padding:0;overflow:hidden">
@@ -564,6 +576,23 @@ function dashboardPage(user, games, msg, msgType = "ok") {
       <h3>Library</h3>
       ${dashboardTabsHtml(hydraGames, steamGames, Boolean(user.steam_id))}
 
+      <h3>Passkeys</h3>
+      <p style="font-size:12px;color:var(--text-1);margin-bottom:8px">Use your device biometrics or security keys to sign in without a password.</p>
+      <div id="passkey-list" style="margin-bottom:12px"><span style="color:var(--text-2);font-size:12px">Loading...</span></div>
+      <div style="display:flex;gap:8px;margin-bottom:16px">
+        <button type="button" onclick="registerPasskey()" style="width:auto;padding:8px 16px;font-size:12px">Register passkey</button>
+      </div>
+
+      ${isAdmin ? `
+      <h3>Global settings</h3>
+      <p style="font-size:12px;color:var(--text-1);margin-bottom:8px">Set the default accent color for all users. Users can override it individually.</p>
+      <form method="POST" action="/web/global-accent">
+        <div class="field"><label>Global accent color</label><div style="display:flex;gap:8px;align-items:center"><input type="color" id="global_accent_picker" name="color" value="${h(accent)}" style="width:40px;height:32px;padding:2px;cursor:pointer;border-radius:0" oninput="document.getElementById('global_accent_hex').value=this.value"><input id="global_accent_hex" value="${h(accent)}" maxlength="7" style="flex:1" placeholder="#d4a574" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value))document.getElementById('global_accent_picker').value=this.value"></div></div>
+        <button type="submit">Save global color</button>
+      </form>
+      <p style="font-size:11px;color:var(--text-2);margin-top:4px">To become admin, open console and call <code style="font-size:11px">POST /profile/make-admin</code> with your auth token (one-time setup).</p>
+      ` : ""}
+
       <h3>API access</h3>
       <p style="font-size:12px;color:var(--text-1);margin-bottom:8px">Use this URL in Hydra Launcher settings:</p>
       <div class="token-box">${h(process.env.PUBLIC_URL ?? "http://localhost:" + (process.env.PORT ?? "3000"))}</div>
@@ -596,7 +625,14 @@ function dashboardPage(user, games, msg, msgType = "ok") {
       </div>
     </div>
 
-    <script>${DASHBOARD_JS}</script>
+    <script>${DASHBOARD_JS}
+      loadPasskeys();
+      document.querySelectorAll('input[type="color"]').forEach(c=>{
+        c.style.borderRadius='0';
+        c.style.height='32px';
+        c.style.padding='2px';
+      });
+    </script>
   `, accent, user.custom_css || "");
 }
 const DEFAULT_PROFILE_CSS = `*{box-sizing:border-box;margin:0;padding:0}body{background:var(--bg-0,#0f0f0f);color:var(--text-0,#ddd);font-family:system-ui,-apple-system,sans-serif;font-size:14px;min-height:100vh}a{color:inherit;text-decoration:none}.card.wide{max-width:100%;border:none;border-radius:0;border:1px solid var(--border-1,#2a2a2a)}.card.wide>div:first-child{height:220px!important;border-radius:0}.card.wide>div:nth-child(2){max-width:960px;margin:0 auto;padding:0 32px 48px!important}.card.wide>div:nth-child(2)>div:first-child{margin-top:-56px!important;margin-bottom:24px!important;align-items:flex-end}.card.wide>div:nth-child(2)>div:first-child img,.card.wide>div:nth-child(2)>div:first-child>div:first-child{width:96px!important;height:96px!important;border:3px solid #0f0f0f!important;box-shadow:0 4px 24px rgba(0,0,0,.6)}.card.wide h1{font-size:22px;font-weight:600;letter-spacing:-.3px;color:#fff}.card.wide h2{font-size:13px;font-weight:400;color:#999;margin-top:2px}.card.wide>div:nth-child(2)>div:nth-child(2){background:var(--bg-1,#1a1a1a);border:1px solid var(--border-1,#2a2a2a);padding:16px 24px;gap:32px!important;margin:0 0 24px!important;display:inline-flex!important}.card.wide>div:nth-child(2)>div:nth-child(2)>div{text-align:center}.card.wide>div:nth-child(2)>div:nth-child(2) span:first-child{font-size:20px!important;font-weight:700}.tab-btn{background:transparent;border:none;border-bottom:2px solid transparent;color:#999;font-size:13px;font-weight:500;padding:8px 4px;cursor:pointer;transition:color .15s,border-color .15s}.tab-btn.active,.tab-btn:hover{color:var(--accent,#d4a574);border-color:var(--accent,#d4a574)}.game-grid{display:grid!important;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:16px}.game-item{background:var(--bg-1,#1a1a1a);border:1px solid var(--border-1,#2a2a2a);overflow:hidden;transition:border-color .15s,transform .15s;cursor:default}.game-item:hover{border-color:var(--accent,#d4a574);transform:translateY(-2px)}.game-item img{width:100%;aspect-ratio:16/9;object-fit:cover}.game-item .info{padding:8px 10px}.game-item .title{font-size:12px;font-weight:500;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.game-item .sub{font-size:11px;color:#666;margin-top:2px}.current-game{display:inline-flex;align-items:center;gap:6px;background:rgba(212,165,116,0.08);border:1px solid rgba(212,165,116,0.3);padding:4px 12px;font-size:12px;color:var(--accent,#d4a574);margin-top:12px}.current-game .dot{width:6px;height:6px;background:var(--accent,#d4a574);border-radius:50%;animation:pulse 2s infinite}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}`;
@@ -909,5 +945,103 @@ async function webRoutes(app) {
         }
         const currentGame = await resolveCurrentGame(user, user.id);
         return reply.type("text/html").send(publicProfilePage(user, games, currentGame));
+    });
+    // Global accent color form handler (admin only)
+    app.post("/web/global-accent", {
+        config: { rawBody: true },
+    }, async (req, reply) => {
+        const user = getUserFromCookie(req);
+        if (!user)
+            return reply.redirect("/");
+        // Check admin
+        let isAdmin = false;
+        try {
+            const roles = JSON.parse(user.roles || "[]");
+            isAdmin = Array.isArray(roles) && roles.includes("admin");
+        }
+        catch { }
+        if (!isAdmin) {
+            const games = db_1.db.prepare("SELECT * FROM games WHERE user_id = ? AND is_deleted = 0").all(user.id);
+            return reply.type("text/html").send(dashboardPage(user, games, "Admin role required.", "err"));
+        }
+        const color = req.body?.color;
+        if (color && /^#[0-9a-fA-F]{6}$/.test(color)) {
+            db_1.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('global_accent_color', ?)").run(color);
+        }
+        const games = db_1.db.prepare("SELECT * FROM games WHERE user_id = ? AND is_deleted = 0").all(user.id);
+        return reply.type("text/html").send(dashboardPage(user, games, "Global accent color updated.", "ok"));
+    });
+    // Passkey web routes (use cookie auth for web dashboard)
+    app.post("/web/passkeys/register/options", async (req, reply) => {
+        const user = getUserFromCookie(req);
+        if (!user)
+            return reply.code(401).send({ error: "unauthorized" });
+        const token = req.cookies?.["web_token"];
+        const host = req.headers.host ?? "localhost:3000";
+        const proto = req.headers["x-forwarded-proto"] ?? "http";
+        try {
+            const res = await fetch(`${proto}://${host}/passkeys/register/options`, {
+                method: "POST",
+                headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+            });
+            return reply.code(res.status).send(await res.json());
+        }
+        catch {
+            return reply.code(500).send({ error: "passkey service unavailable" });
+        }
+    });
+    app.post("/web/passkeys/register/verify", async (req, reply) => {
+        const user = getUserFromCookie(req);
+        if (!user)
+            return reply.code(401).send({ error: "unauthorized" });
+        const token = req.cookies?.["web_token"];
+        const host = req.headers.host ?? "localhost:3000";
+        const proto = req.headers["x-forwarded-proto"] ?? "http";
+        try {
+            const res = await fetch(`${proto}://${host}/passkeys/register/verify`, {
+                method: "POST",
+                headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+                body: JSON.stringify(req.body),
+            });
+            return reply.code(res.status).send(await res.json());
+        }
+        catch {
+            return reply.code(500).send({ error: "passkey service unavailable" });
+        }
+    });
+    app.get("/web/passkeys/list", async (req, reply) => {
+        const user = getUserFromCookie(req);
+        if (!user)
+            return reply.code(401).send({ error: "unauthorized" });
+        const token = req.cookies?.["web_token"];
+        const host = req.headers.host ?? "localhost:3000";
+        const proto = req.headers["x-forwarded-proto"] ?? "http";
+        try {
+            const res = await fetch(`${proto}://${host}/passkeys`, {
+                headers: { "Authorization": `Bearer ${token}` },
+            });
+            return reply.code(res.status).send(await res.json());
+        }
+        catch {
+            return reply.code(500).send({ error: "passkey service unavailable" });
+        }
+    });
+    app.delete("/web/passkeys/:id", async (req, reply) => {
+        const user = getUserFromCookie(req);
+        if (!user)
+            return reply.code(401).send({ error: "unauthorized" });
+        const token = req.cookies?.["web_token"];
+        const host = req.headers.host ?? "localhost:3000";
+        const proto = req.headers["x-forwarded-proto"] ?? "http";
+        try {
+            const res = await fetch(`${proto}://${host}/passkeys/${req.params.id}`, {
+                method: "DELETE",
+                headers: { "Authorization": `Bearer ${token}` },
+            });
+            return reply.code(res.status).send(await res.json());
+        }
+        catch {
+            return reply.code(500).send({ error: "passkey service unavailable" });
+        }
     });
 }
