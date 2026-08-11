@@ -48,7 +48,6 @@ function hashPassword(p) {
     return bcryptjs_1.default.hashSync(p, 10);
 }
 function verifyPassword(p, hash) {
-    // support legacy sha256 hashes during migration
     if (hash.length === 64) {
         const sha = require("node:crypto").createHash("sha256").update(p).digest("hex");
         return sha === hash;
@@ -77,7 +76,6 @@ async function resolveCurrentGame(user, userId) {
         }
         catch { }
     }
-    // Fallback: DB session tracking
     const active = db_1.db.prepare("SELECT object_id, title, shop, session_started_at FROM games WHERE user_id = ? AND is_deleted = 0 AND session_started_at IS NOT NULL AND last_time_played >= ? ORDER BY last_time_played DESC LIMIT 1").get(userId, nowTs - SESSION_TIMEOUT);
     if (active) {
         return { title: active.title, objectId: active.object_id, shop: active.shop, sessionDurationInSeconds: nowTs - active.session_started_at };
@@ -108,11 +106,9 @@ function fmtRelative(unixSec) {
 function parseSectionsOrder(raw) {
     try {
         const arr = JSON.parse(raw || '["games","recent"]');
-        // Migrate old keys: "library" -> "games"
         const mapped = arr.map((k) => k === "library" ? "games" : k);
         const valid = ["games", "recent"];
         const filtered = mapped.filter((k) => valid.includes(k));
-        // Ensure both keys present
         for (const k of valid)
             if (!filtered.includes(k))
                 filtered.push(k);
@@ -131,55 +127,201 @@ function recentActivityHtml(games) {
         return false; seen.add(k); return true; })
         .slice(0, 5);
     if (!recent.length)
-        return `<p style="color:var(--sub);font-size:13px;padding:8px 0">No recent activity.</p>`;
+        return `<p style="color:var(--text-2);font-size:13px;padding:8px 0">No recent activity.</p>`;
     return `<table><thead><tr><th>Game</th><th>Playtime</th><th>Last played</th></tr></thead><tbody>` +
         recent.map(g => `<tr><td>${h(g.title)}</td><td>${fmtHours(g.play_time_in_seconds)}</td><td>${fmtRelative(g.last_time_played)}</td></tr>`).join("") +
         `</tbody></table>`;
 }
 const CSS = `
-  :root{--bg:#0d0d0d;--bg2:#151515;--bg3:#1e1e1e;--border:#2a2a2a;--accent:#7b68ee;--text:#e0e0e0;--sub:#888;--err:#e05c5c}
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{background:#111;color:#e1e1e1;font-family:"Inter",system-ui,sans-serif;min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:40px 20px}
-  .card{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:32px;width:100%;max-width:420px}
-  .card.wide{max-width:720px;padding:0}
-  h1{font-size:20px;font-weight:700;color:#fff;margin-bottom:4px;letter-spacing:-.3px}
-  h2{font-size:13px;color:#888;margin-bottom:24px;font-weight:400}
-  h3{font-size:11px;color:#666;margin:24px 0 10px;text-transform:uppercase;letter-spacing:.1em;font-weight:600}
-  label{display:block;font-size:12px;color:#888;margin-bottom:4px;font-weight:500}
-  input,textarea{width:100%;background:#111;border:1px solid #2a2a2a;border-radius:6px;padding:9px 12px;color:#e1e1e1;font-family:inherit;font-size:13px;outline:none;transition:border .15s}
-  input:focus,textarea:focus{border-color:var(--accent,#7b68ee)}
-  textarea{resize:vertical;min-height:60px}
-  .field{margin-bottom:14px}
-  button,.btn{background:var(--accent,#7b68ee);color:var(--btn-text,#fff);border:none;border-radius:6px;padding:10px 18px;font-family:inherit;font-size:13px;font-weight:500;cursor:pointer;width:100%;transition:opacity .15s}
-  button:hover,.btn:hover{opacity:.85}
-  .btn-ghost{background:transparent;border:1px solid #2a2a2a;color:#888}
-  .btn-ghost:hover{border-color:var(--accent,#7b68ee);color:#e1e1e1}
-  .err{background:#1f0f0f;border:1px solid #5a2020;border-radius:6px;padding:10px 14px;font-size:12px;color:#e07070;margin-bottom:14px}
-  .ok{background:#0f1f14;border:1px solid #2a6040;border-radius:6px;padding:10px 14px;font-size:12px;color:#5cb87a;margin-bottom:14px}
-  a{color:var(--accent,#7b68ee);text-decoration:none}
-  a:hover{text-decoration:underline}
-  .meta{font-size:12px;color:#666;text-align:center;margin-top:16px}
-  .row{display:flex;gap:10px}
-  .row button{flex:1}
-  .token-box{background:#111;border:1px solid #2a2a2a;border-radius:6px;padding:10px 12px;font-size:12px;word-break:break-all;color:#888}
-  .tab-btn{background:#1a1a1a;border:1px solid #2a2a2a;color:#888;width:auto;padding:6px 14px;font-size:12px;border-radius:6px}
-  .tab-btn.active{background:var(--accent,#7b68ee);border-color:var(--accent,#7b68ee);color:var(--btn-text,#fff)}
-  .tab-btn:hover{opacity:.85}
-  th{color:#666;text-align:left;padding:6px 8px;border-bottom:1px solid #2a2a2a;font-size:11px;text-transform:uppercase;letter-spacing:.08em}
-  td{padding:8px 8px;border-bottom:1px solid #1a1a1a;color:#e1e1e1;font-size:13px}
-  tr:last-child td{border-bottom:none}
-  .badge{font-size:10px;background:#222;border:1px solid #2a2a2a;border-radius:4px;padding:1px 6px;color:#888}
-  .warn{background:#1a1500;border:1px solid #4a3800;border-radius:6px;padding:10px 14px;font-size:12px;color:#c8a040;margin-bottom:14px}
+  :root {
+    --bg-0: #0f0f0f;
+    --bg-1: #1a1a1a;
+    --bg-2: #222222;
+    --bg-3: #2a2a2a;
+    --bg-hover: #252525;
+    --text-0: #dddddd;
+    --text-1: #999999;
+    --text-2: #666669;
+    --border-1: #2a2a2a;
+    --border-2: #333333;
+    --accent: #d4a574;
+    --accent-bright: #e6bb93;
+    --accent-glow: rgba(212,165,116,0.15);
+    --border-acc: rgba(212,165,116,0.3);
+    --err: #d77;
+    --ok: #7a9;
+    --font-sans: system-ui, -apple-system, sans-serif;
+    --font-mono: ui-monospace, "JetBrains Mono", "Cascadia Code", "Fira Code", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg-0);
+    color: var(--text-0);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    min-height: 100vh;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 40px 20px;
+    line-height: 1.5;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  h1 { font-size: 1.1rem; font-weight: 600; color: var(--text-0); letter-spacing: -0.3px; }
+  h2 { font-size: 13px; color: var(--text-1); font-weight: 400; }
+  h3 {
+    font-size: 11px;
+    color: var(--text-2);
+    margin: 24px 0 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+  }
+  label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-1);
+    margin-bottom: 4px;
+    font-weight: 500;
+  }
+  input, textarea, select {
+    width: 100%;
+    background: var(--bg-0);
+    border: 1px solid var(--border-1);
+    border-radius: 0;
+    padding: 9px 12px;
+    color: var(--text-0);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 60px; }
+  .field { margin-bottom: 14px; }
+  button, .btn {
+    background: var(--accent);
+    color: #111;
+    border: none;
+    border-radius: 0;
+    padding: 10px 18px;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    width: 100%;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  button:hover, .btn:hover { opacity: 0.85; }
+  button:active { transform: scale(0.98); }
+  .btn-ghost {
+    background: transparent;
+    border: 1px solid var(--border-1);
+    color: var(--text-1);
+  }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--text-0); }
+  .err {
+    background: rgba(221,119,119,0.08);
+    border: 1px solid rgba(221,119,119,0.25);
+    padding: 10px 14px;
+    font-size: 12px;
+    color: var(--err);
+    margin-bottom: 14px;
+  }
+  .ok {
+    background: rgba(119,170,153,0.08);
+    border: 1px solid rgba(119,170,153,0.25);
+    padding: 10px 14px;
+    font-size: 12px;
+    color: var(--ok);
+    margin-bottom: 14px;
+  }
+  .warn {
+    background: rgba(212,165,116,0.06);
+    border: 1px solid var(--border-acc);
+    padding: 10px 14px;
+    font-size: 12px;
+    color: var(--accent);
+    margin-bottom: 14px;
+  }
+  .card {
+    background: var(--bg-1);
+    border: 1px solid var(--border-1);
+    padding: 32px;
+    width: 100%;
+    max-width: 420px;
+    transition: border-color 0.15s;
+  }
+  .card:hover { border-color: var(--border-2); }
+  .card.wide { max-width: 720px; padding: 0; }
+  .row { display: flex; gap: 10px; }
+  .row button { flex: 1; }
+  .token-box {
+    background: var(--bg-0);
+    border: 1px solid var(--border-1);
+    padding: 10px 12px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    word-break: break-all;
+    color: var(--text-1);
+  }
+  .tab-btn {
+    background: transparent;
+    border: 1px solid var(--border-1);
+    color: var(--text-1);
+    width: auto;
+    padding: 6px 14px;
+    font-size: 12px;
+    border-radius: 0;
+    font-family: var(--font-sans);
+    font-weight: 500;
+  }
+  .tab-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #111;
+  }
+  .tab-btn:hover { opacity: 0.85; }
+  th {
+    color: var(--text-2);
+    text-align: left;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border-1);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-family: var(--font-mono);
+    font-weight: 500;
+  }
+  td {
+    padding: 8px;
+    border-bottom: 1px solid var(--bg-2);
+    color: var(--text-0);
+    font-size: 13px;
+  }
+  tr:last-child td { border-bottom: none; }
+  table { width: 100%; border-collapse: collapse; }
+  .tag {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    background: var(--accent-glow);
+    border: 1px solid var(--border-acc);
+    padding: 2px 8px;
+    color: var(--accent);
+    display: inline-block;
+  }
+  .meta { font-size: 12px; color: var(--text-2); text-align: center; margin-top: 16px; }
+  input[type="checkbox"] { width: auto; }
 `;
 function contrastColor(hex) {
     const r = parseInt(hex.slice(1, 3), 16);
     const g = parseInt(hex.slice(3, 5), 16);
     const b = parseInt(hex.slice(5, 7), 16);
-    // Perceived luminance
     return (r * 299 + g * 587 + b * 114) / 1000 > 128 ? "#111111" : "#ffffff";
 }
-function page(title, body, accent = "#7b68ee", customCss = "") {
-    return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${h(title)} — Hydra Self-Hosted</title><style>${CSS}:root{--accent:${accent};--btn-text:${contrastColor(accent)}}${customCss ? customCss : ""}</style></head><body>${body}</body></html>`;
+function page(title, body, accent = "#d4a574", customCss = "") {
+    return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${h(title)} — Hydra</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet"><style>${CSS}:root{--accent:${accent};--accent-bright:${accent}cc;--accent-glow:${accent}26;--border-acc:${accent}4d;--btn-contrast:${contrastColor(accent)}}${customCss ? customCss : ""}</style></head><body>${body}</body></html>`;
 }
 function tokenGatePage(error) {
     return page("Access", `
@@ -192,7 +334,7 @@ function tokenGatePage(error) {
         <button type="submit">Continue</button>
       </form>
     </div>
-  `, "#e0e0e0");
+  `);
 }
 function loginPage(error, launcher = false) {
     return page("Sign in", `
@@ -209,26 +351,24 @@ function loginPage(error, launcher = false) {
           <button type="submit" name="action" value="register" class="btn-ghost">Register</button>
         </div>
       </form>
-      <p class="meta">This is a Hydra Launcher self-hosted instance</p>
+      <p class="meta">Hydra Launcher self-hosted instance</p>
     </div>
-  `, "#e0e0e0");
+  `);
 }
 function tabsHtml(hydraGames, steamGames, hasSteam, showRecent = true, sectionsOrder = ["games", "recent"]) {
     const PIN_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:middle;margin-right:4px;opacity:0.7"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>`;
-    const HEART_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="#e05c73" style="vertical-align:middle;margin-left:4px;flex-shrink:0"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>`;
+    const HEART_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="var(--err)" style="vertical-align:middle;margin-left:4px;flex-shrink:0"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>`;
     const mkRows = (list) => {
         const sorted = [...list.filter(g => g.is_pinned), ...list.filter(g => !g.is_pinned)];
-        return sorted.slice(0, 100).map(g => `<tr><td>${g.is_pinned ? PIN_ICON : ""}${h(g.title)}${g.is_favorite ? HEART_ICON : ""}</td><td>${fmtHours(g.play_time_in_seconds)}</td></tr>`).join("") || `<tr><td colspan="2" style="color:var(--sub)">No games yet.</td></tr>`;
+        return sorted.slice(0, 100).map(g => `<tr><td>${g.is_pinned ? PIN_ICON : ""}${h(g.title)}${g.is_favorite ? HEART_ICON : ""}</td><td>${fmtHours(g.play_time_in_seconds)}</td></tr>`).join("") || `<tr><td colspan="2" style="color:var(--text-1)">No games yet.</td></tr>`;
     };
     const mkContent = (list) => {
         const parts = {
             games: `<table><thead><tr><th>Game</th><th>Playtime</th></tr></thead><tbody>${mkRows(list)}</tbody></table>`,
-            recent: showRecent ? `<h3 style="margin-top:20px">Recent Activity</h3>${recentActivityHtml(list)}` : "",
+            recent: showRecent ? `<h3>Recent Activity</h3>${recentActivityHtml(list)}` : "",
         };
         return sectionsOrder.map(k => parts[k] ?? "").join("");
     };
-    const mkPanel = (id, list) => `
-    <div class="tab-panel" id="tab-${id}" style="display:none">${mkContent(list)}</div>`;
     return `
     <div class="tabs" style="margin-top:16px">
       <div style="display:flex;gap:8px;margin-bottom:12px">
@@ -236,7 +376,7 @@ function tabsHtml(hydraGames, steamGames, hasSteam, showRecent = true, sectionsO
         ${hasSteam ? `<button class="tab-btn" data-tab="ph-steam">Steam (${steamGames.length})</button>` : ""}
       </div>
       <div class="tab-panel" id="tab-ph-hydra">${mkContent(hydraGames)}</div>
-      ${hasSteam ? mkPanel("ph-steam", steamGames) : ""}
+      ${hasSteam ? `<div class="tab-panel" id="tab-ph-steam" style="display:none">${mkContent(steamGames)}</div>` : ""}
     </div>
     <script>
       document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -252,7 +392,7 @@ function tabsHtml(hydraGames, steamGames, hasSteam, showRecent = true, sectionsO
 }
 function dashboardTabsHtml(hydraGames, steamGames, hasSteam) {
     const PIN_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:middle;margin-right:4px;opacity:0.7"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>`;
-    const HEART_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="#e05c73" style="vertical-align:middle;margin-left:4px;flex-shrink:0"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>`;
+    const HEART_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="var(--err)" style="vertical-align:middle;margin-left:4px;flex-shrink:0"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>`;
     const mkRows = (list) => {
         const sorted = [...list.filter(g => g.is_pinned), ...list.filter(g => !g.is_pinned)];
         return sorted.slice(0, 100).map(g => `
@@ -263,20 +403,20 @@ function dashboardTabsHtml(hydraGames, steamGames, hasSteam) {
           <form method="POST" action="/web/${g.is_favorite ? "unfavorite" : "favorite"}" style="display:inline;margin:0">
             <input type="hidden" name="shop" value="${h(g.shop)}">
             <input type="hidden" name="object_id" value="${h(g.object_id)}">
-            <button type="submit" style="background:none;border:1px solid var(--bg3);border-radius:4px;cursor:pointer;padding:2px 6px;font-size:11px;color:${g.is_favorite ? "#e05c73" : "var(--sub)"}">${g.is_favorite ? "♥" : "♡"}</button>
+            <button type="submit" style="background:none;border:1px solid var(--border-1);border-radius:0;cursor:pointer;padding:2px 6px;font-size:11px;color:${g.is_favorite ? "var(--err)" : "var(--text-1)"};font-family:var(--font-sans);font-weight:500">${g.is_favorite ? "♥" : "♡"}</button>
           </form>
           <form method="POST" action="/web/${g.is_pinned ? "unpin" : "pin"}" style="display:inline;margin:0">
             <input type="hidden" name="shop" value="${h(g.shop)}">
             <input type="hidden" name="object_id" value="${h(g.object_id)}">
-            <button type="submit" style="background:none;border:1px solid var(--bg3);border-radius:4px;cursor:pointer;padding:2px 6px;font-size:11px;color:${g.is_pinned ? "var(--accent)" : "var(--sub)"}">${g.is_pinned ? "Unpin" : "Pin"}</button>
+            <button type="submit" style="background:none;border:1px solid var(--border-1);border-radius:0;cursor:pointer;padding:2px 6px;font-size:11px;color:${g.is_pinned ? "var(--accent)" : "var(--text-1)"};font-family:var(--font-sans);font-weight:500">${g.is_pinned ? "Unpin" : "Pin"}</button>
           </form>
         </td>
-      </tr>`).join("") || `<tr><td colspan="3" style="color:var(--sub)">No games yet.</td></tr>`;
+      </tr>`).join("") || `<tr><td colspan="3" style="color:var(--text-1)">No games yet.</td></tr>`;
     };
     const mkPanel = (id, list) => `
     <div class="tab-panel" id="tab-${id}" style="display:none">
       <table><thead><tr><th>Game</th><th>Playtime</th><th></th></tr></thead><tbody>${mkRows(list)}</tbody></table>
-      <h3 style="margin-top:20px">Recent Activity</h3>
+      <h3>Recent Activity</h3>
       ${recentActivityHtml(list)}
     </div>`;
     return `
@@ -287,7 +427,7 @@ function dashboardTabsHtml(hydraGames, steamGames, hasSteam) {
       </div>
       <div class="tab-panel" id="tab-dh-hydra">
         <table><thead><tr><th>Game</th><th>Playtime</th><th></th></tr></thead><tbody>${mkRows(hydraGames)}</tbody></table>
-        <h3 style="margin-top:20px">Recent Activity</h3>
+        <h3>Recent Activity</h3>
         ${recentActivityHtml(hydraGames)}
       </div>
       ${hasSteam ? mkPanel("dh-steam", steamGames) : ""}
@@ -305,7 +445,7 @@ function dashboardTabsHtml(hydraGames, steamGames, hasSteam) {
   `;
 }
 function dashboardPage(user, games, msg, msgType = "ok") {
-    const accent = user.accent_color || "#7b68ee";
+    const accent = user.accent_color || "#d4a574";
     const totalHours = Math.floor(games.reduce((s, g) => s + g.play_time_in_seconds, 0) / 3600);
     const hydraGames = [...games].filter(g => g.source !== "steam_sync")
         .sort((a, b) => (b.is_pinned ?? 0) - (a.is_pinned ?? 0) || b.play_time_in_seconds - a.play_time_in_seconds);
@@ -337,29 +477,29 @@ function dashboardPage(user, games, msg, msgType = "ok") {
       <div style="position:relative">
         ${user.background_image_url
         ? `<div id="banner" style="height:140px;background:url('${h(user.background_image_url)}') center/cover no-repeat;position:relative"></div>`
-        : `<div id="banner" style="height:80px;background:var(--bg3);position:relative"></div>`}
+        : `<div id="banner" style="height:80px;background:var(--bg-2);position:relative"></div>`}
         <div style="position:absolute;top:8px;right:8px;display:flex;gap:6px">
-          <label style="cursor:pointer;background:rgba(0,0,0,.55);color:#fff;font-size:11px;padding:4px 10px;border-radius:4px;backdrop-filter:blur(4px)">
+          <label style="cursor:pointer;background:rgba(0,0,0,.6);color:#fff;font-size:11px;padding:4px 10px;border-radius:0;backdrop-filter:blur(4px);font-family:var(--font-mono)">
             ${user.background_image_url ? "Change banner" : "Set banner"}
             <input type="file" accept="image/*" style="display:none" onchange="uploadImg(this,'banner')">
           </label>
-          ${user.background_image_url ? `<button onclick="removeBanner()" style="background:rgba(0,0,0,.55);color:#fff;font-size:11px;padding:4px 10px;border-radius:4px;border:none;cursor:pointer;backdrop-filter:blur(4px)">Remove</button>` : ""}
+          ${user.background_image_url ? `<button onclick="removeBanner()" style="background:rgba(0,0,0,.6);color:#fff;font-size:11px;padding:4px 10px;border-radius:0;border:none;cursor:pointer;backdrop-filter:blur(4px);font-family:var(--font-mono);font-weight:500;width:auto">Remove</button>` : ""}
         </div>
       </div>
       <div style="padding:0 32px 32px">
         <div style="display:flex;align-items:flex-end;gap:16px;margin-top:${user.background_image_url ? "-36px" : "-16px"};margin-bottom:16px;position:relative;z-index:1">
           <div style="position:relative;flex-shrink:0;cursor:pointer" onclick="document.getElementById('avatar-input').click()" title="Change avatar">
             ${user.profile_image_url
-        ? `<img src="${h(user.profile_image_url)}" id="avatar-preview" style="width:64px;height:64px;border-radius:10px;border:3px solid var(--bg2);object-fit:cover;display:block">`
-        : `<div id="avatar-preview" style="width:64px;height:64px;border-radius:10px;border:3px solid var(--bg2);background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:24px">⬡</div>`}
-            <div style="position:absolute;inset:0;border-radius:10px;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s" id="avatar-overlay">
+        ? `<img src="${h(user.profile_image_url)}" id="avatar-preview" style="width:64px;height:64px;border:3px solid var(--bg-1);object-fit:cover;display:block">`
+        : `<div id="avatar-preview" style="width:64px;height:64px;border:3px solid var(--bg-1);background:var(--bg-2);display:flex;align-items:center;justify-content:center;font-size:24px">⬡</div>`}
+            <div style="position:absolute;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s" id="avatar-overlay">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm17.71-10.46a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
             </div>
             <input type="file" id="avatar-input" accept="image/*" style="display:none" onchange="openCrop(this)">
           </div>
           <div>
-            <div style="font-size:18px;color:var(--accent);font-weight:bold">${h(user.display_name || user.username)}</div>
-            <div style="font-size:13px;color:var(--sub)">@${h(user.username)} · ${games.length} games · ${totalHours.toLocaleString()}h</div>
+            <div style="font-size:18px;color:var(--accent);font-weight:600;font-family:var(--font-sans)">${h(user.display_name || user.username)}</div>
+            <div style="font-size:13px;color:var(--text-1)">@${h(user.username)} · ${games.length} games · ${totalHours.toLocaleString()}h</div>
           </div>
         </div>
       ${msg ? `<div class="${msgType}">${h(msg)}</div>` : ""}
@@ -376,8 +516,8 @@ function dashboardPage(user, games, msg, msgType = "ok") {
         <div class="field"><label>Username</label><input name="username" value="${h(user.username)}" maxlength="32" pattern="[a-zA-Z0-9_]+" title="Letters, numbers and underscores only"></div>
         <div class="field"><label>Display name</label><input name="display_name" value="${h(user.display_name)}" maxlength="64"></div>
         <div class="field"><label>Bio</label><textarea name="bio" maxlength="200">${h(user.bio)}</textarea></div>
-        <div class="field"><label>Accent color</label><div style="display:flex;gap:8px;align-items:center"><input type="color" id="accent_picker" name="accent_color" value="${h(accent)}" style="width:40px;height:32px;padding:2px;cursor:pointer" oninput="document.getElementById('accent_hex').value=this.value"><input id="accent_hex" name="accent_color_hex" value="${h(accent)}" maxlength="7" style="flex:1" placeholder="#7b68ee" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value))document.getElementById('accent_picker').value=this.value"></div></div>
-        <div class="field"><label>Custom CSS <span style="color:var(--sub);font-size:11px">(applied to dashboard &amp; public profile)</span></label><textarea name="custom_css" rows="6" style="font-family:monospace;font-size:12px" placeholder="/* e.g. body { background: #000; } */">${h(user.custom_css || "")}</textarea></div>
+        <div class="field"><label>Accent color</label><div style="display:flex;gap:8px;align-items:center"><input type="color" id="accent_picker" name="accent_color" value="${h(accent)}" style="width:40px;height:32px;padding:2px;cursor:pointer;border-radius:0" oninput="document.getElementById('accent_hex').value=this.value"><input id="accent_hex" name="accent_color_hex" value="${h(accent)}" maxlength="7" style="flex:1" placeholder="#d4a574" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value))document.getElementById('accent_picker').value=this.value"></div></div>
+        <div class="field"><label>Custom CSS <span style="color:var(--text-2);font-size:11px">(applied to dashboard &amp; public profile)</span></label><textarea name="custom_css" rows="6" style="font-family:var(--font-mono);font-size:12px" placeholder="/* e.g. body { background: #000; } */">${h(user.custom_css || "")}</textarea></div>
         <div class="field" style="display:flex;align-items:center;gap:8px">
           <input type="checkbox" name="show_recent_activity" id="show_recent" value="1"${user.show_recent_activity !== 0 ? " checked" : ""} style="width:auto">
           <label for="show_recent" style="margin:0;cursor:pointer">Show recent activity on public profile</label>
@@ -387,12 +527,12 @@ function dashboardPage(user, games, msg, msgType = "ok") {
           <label for="show_library" style="margin:0;cursor:pointer">Show library on public profile</label>
         </div>
         <div class="field">
-          <label>Section order inside each tab <span style="color:var(--sub);font-size:11px">(drag to reorder)</span></label>
+          <label>Section order inside each tab <span style="color:var(--text-2);font-size:11px">(drag to reorder)</span></label>
           <input type="hidden" name="profile_sections_order" id="sections_order_input" value="${h(JSON.stringify(parseSectionsOrder(user.profile_sections_order)))}">
           <ul id="sections-list" style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:6px">${(() => {
         const order = parseSectionsOrder(user.profile_sections_order);
         const labels = { games: "Game list", recent: "Recent Activity" };
-        return order.map(k => `<li data-key="${k}" style="display:flex;align-items:center;gap:8px;background:var(--bg3);padding:8px 12px;border-radius:6px;cursor:grab;user-select:none"><span style="opacity:.5">⠿</span> ${labels[k] ?? k}</li>`).join("");
+        return order.map(k => `<li data-key="${k}" style="display:flex;align-items:center;gap:8px;background:var(--bg-2);padding:8px 12px;cursor:grab;user-select:none"><span style="opacity:.5">⠿</span> ${labels[k] ?? k}</li>`).join("");
     })()}</ul>
         </div>
         <button type="submit">Save profile</button>
@@ -416,7 +556,7 @@ function dashboardPage(user, games, msg, msgType = "ok") {
       <h3>Steam integration</h3>
       <div class="warn">Your Steam API key is stored on this server. Use a dedicated key or one with minimal permissions.</div>
       <form method="POST" action="/web/steam">
-        <div class="field"><label>SteamID64 <a href="https://steamid.io" target="_blank">↗ find yours</a></label><input name="steam_id" value="${h(user.steam_id ?? "")}" placeholder="76561198xxxxxxxxx"><p style="font-size:11px;color:var(--sub);margin-top:4px">Go to <a href="https://steamid.io" target="_blank">steamid.io</a>, enter your Steam profile URL or username, copy the <strong>steamID64</strong> value.</p></div>
+        <div class="field"><label>SteamID64 <a href="https://steamid.io" target="_blank">↗ find yours</a></label><input name="steam_id" value="${h(user.steam_id ?? "")}" placeholder="76561198xxxxxxxxx"><p style="font-size:11px;color:var(--text-2);margin-top:4px">Go to <a href="https://steamid.io" target="_blank">steamid.io</a>, enter your Steam profile URL or username, copy the <strong>steamID64</strong> value.</p></div>
         <div class="field"><label>Steam Web API Key <a href="https://steamcommunity.com/dev/apikey" target="_blank">↗</a></label><input name="steam_api_key" type="password" value="${user.steam_api_key ? "••••••••" : ""}" placeholder="Leave blank to keep current" autocomplete="off"></div>
         <button type="submit">Save &amp; sync Steam now</button>
       </form>
@@ -425,33 +565,33 @@ function dashboardPage(user, games, msg, msgType = "ok") {
       ${dashboardTabsHtml(hydraGames, steamGames, Boolean(user.steam_id))}
 
       <h3>API access</h3>
-      <p style="font-size:12px;color:var(--sub);margin-bottom:8px">Use this URL in Hydra Launcher settings:</p>
+      <p style="font-size:12px;color:var(--text-1);margin-bottom:8px">Use this URL in Hydra Launcher settings:</p>
       <div class="token-box">${h(process.env.PUBLIC_URL ?? "http://localhost:" + (process.env.PORT ?? "3000"))}</div>
 
       <div style="margin-top:24px">
         <a href="/u/${h(user.username)}" target="_blank" class="btn btn-ghost" style="display:inline-block;padding:8px 14px;font-size:12px">View public profile ↗</a>
         &nbsp;
-        <a href="/web/logout" style="font-size:12px;color:var(--sub)">Sign out</a>
+        <a href="/web/logout" style="font-size:12px;color:var(--text-1)">Sign out</a>
       </div>
       </div>
     </div>
 
     <!-- Crop modal -->
     <div id="crop-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1000;align-items:center;justify-content:center">
-      <div style="background:var(--bg2);border-radius:10px;padding:20px;width:340px;max-width:90vw">
+      <div style="background:var(--bg-1);padding:20px;width:340px;max-width:90vw;border:1px solid var(--border-1)">
         <div style="font-size:14px;font-weight:600;margin-bottom:12px">Crop avatar</div>
-        <div style="position:relative;width:300px;height:300px;overflow:hidden;border-radius:8px;background:#000;margin:0 auto">
+        <div style="position:relative;width:300px;height:300px;overflow:hidden;background:#000;margin:0 auto">
           <img id="crop-img" style="position:absolute;cursor:move;max-width:none;user-select:none">
         </div>
         <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
-          <label style="font-size:11px;color:var(--sub);flex-shrink:0">Zoom</label>
+          <label style="font-size:11px;color:var(--text-2);flex-shrink:0;font-family:var(--font-mono)">Zoom</label>
           <input type="range" id="crop-zoom" min="0.5" max="3" step="0.01" value="1" style="flex:1">
-          <label style="font-size:11px;color:var(--sub);flex-shrink:0">Rotate</label>
+          <label style="font-size:11px;color:var(--text-2);flex-shrink:0;font-family:var(--font-mono)">Rotate</label>
           <input type="range" id="crop-rotate" min="-180" max="180" step="1" value="0" style="flex:1">
         </div>
         <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
-          <button onclick="closeCrop()" style="background:var(--bg3);color:var(--sub)">Cancel</button>
-          <button onclick="applyCrop()">Save avatar</button>
+          <button onclick="closeCrop()" style="background:var(--bg-2);color:var(--text-1);width:auto;padding:8px 16px">Cancel</button>
+          <button onclick="applyCrop()" style="width:auto;padding:8px 16px">Save avatar</button>
         </div>
       </div>
     </div>
@@ -459,7 +599,7 @@ function dashboardPage(user, games, msg, msgType = "ok") {
     <script>${DASHBOARD_JS}</script>
   `, accent, user.custom_css || "");
 }
-const DEFAULT_PROFILE_CSS = `*{box-sizing:border-box;margin:0;padding:0}body{background:#111;color:#e1e1e1;font-family:"Inter",system-ui,sans-serif;font-size:14px;min-height:100vh}a{color:inherit;text-decoration:none}.card.wide{max-width:100%;border-radius:0;border:none;background:transparent}.card.wide>div:first-child{height:220px!important;border-radius:0}.card.wide>div:nth-child(2){max-width:960px;margin:0 auto;padding:0 32px 48px!important}.card.wide>div:nth-child(2)>div:first-child{margin-top:-56px!important;margin-bottom:24px!important;align-items:flex-end}.card.wide>div:nth-child(2)>div:first-child img,.card.wide>div:nth-child(2)>div:first-child>div:first-child{width:96px!important;height:96px!important;border-radius:12px!important;border:3px solid #111!important;box-shadow:0 4px 24px rgba(0,0,0,.6)}.card.wide h1{font-size:22px;font-weight:700;letter-spacing:-.3px;color:#fff}.card.wide h2{font-size:13px;font-weight:400;color:#888;margin-top:2px}.card.wide>div:nth-child(2)>div:nth-child(2){background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:16px 24px;gap:32px!important;margin:0 0 24px!important;display:inline-flex!important}.card.wide>div:nth-child(2)>div:nth-child(2)>div{text-align:center}.card.wide>div:nth-child(2)>div:nth-child(2) span:first-child{font-size:20px!important;font-weight:700}.tab-btn{background:transparent;border:none;border-bottom:2px solid transparent;color:#888;font-size:13px;font-weight:500;padding:8px 4px;cursor:pointer;transition:color .15s,border-color .15s}.tab-btn.active,.tab-btn:hover{color:var(--btn-text,#111);border-color:var(--accent,#8b5cf6)}.game-grid{display:grid!important;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:16px}.game-item{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;overflow:hidden;transition:border-color .15s,transform .15s;cursor:default}.game-item:hover{border-color:var(--accent,#8b5cf6);transform:translateY(-2px)}.game-item img{width:100%;aspect-ratio:3/2;object-fit:cover;display:block}.game-item>div{padding:8px 10px}.game-item strong{font-size:12px;font-weight:500;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.game-item span{font-size:11px;color:#666}.card.wide p:last-child{color:#444!important;margin-top:32px!important}.card.wide p:last-child a{color:var(--accent,#8b5cf6)}`;
+const DEFAULT_PROFILE_CSS = `*{box-sizing:border-box;margin:0;padding:0}body{background:var(--bg-0,#0f0f0f);color:var(--text-0,#ddd);font-family:system-ui,-apple-system,sans-serif;font-size:14px;min-height:100vh}a{color:inherit;text-decoration:none}.card.wide{max-width:100%;border:none;border-radius:0;border:1px solid var(--border-1,#2a2a2a)}.card.wide>div:first-child{height:220px!important;border-radius:0}.card.wide>div:nth-child(2){max-width:960px;margin:0 auto;padding:0 32px 48px!important}.card.wide>div:nth-child(2)>div:first-child{margin-top:-56px!important;margin-bottom:24px!important;align-items:flex-end}.card.wide>div:nth-child(2)>div:first-child img,.card.wide>div:nth-child(2)>div:first-child>div:first-child{width:96px!important;height:96px!important;border:3px solid #0f0f0f!important;box-shadow:0 4px 24px rgba(0,0,0,.6)}.card.wide h1{font-size:22px;font-weight:600;letter-spacing:-.3px;color:#fff}.card.wide h2{font-size:13px;font-weight:400;color:#999;margin-top:2px}.card.wide>div:nth-child(2)>div:nth-child(2){background:var(--bg-1,#1a1a1a);border:1px solid var(--border-1,#2a2a2a);padding:16px 24px;gap:32px!important;margin:0 0 24px!important;display:inline-flex!important}.card.wide>div:nth-child(2)>div:nth-child(2)>div{text-align:center}.card.wide>div:nth-child(2)>div:nth-child(2) span:first-child{font-size:20px!important;font-weight:700}.tab-btn{background:transparent;border:none;border-bottom:2px solid transparent;color:#999;font-size:13px;font-weight:500;padding:8px 4px;cursor:pointer;transition:color .15s,border-color .15s}.tab-btn.active,.tab-btn:hover{color:var(--accent,#d4a574);border-color:var(--accent,#d4a574)}.game-grid{display:grid!important;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:16px}.game-item{background:var(--bg-1,#1a1a1a);border:1px solid var(--border-1,#2a2a2a);overflow:hidden;transition:border-color .15s,transform .15s;cursor:default}.game-item:hover{border-color:var(--accent,#d4a574);transform:translateY(-2px)}.game-item img{width:100%;aspect-ratio:16/9;object-fit:cover}.game-item .info{padding:8px 10px}.game-item .title{font-size:12px;font-weight:500;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.game-item .sub{font-size:11px;color:#666;margin-top:2px}.current-game{display:inline-flex;align-items:center;gap:6px;background:rgba(212,165,116,0.08);border:1px solid rgba(212,165,116,0.3);padding:4px 12px;font-size:12px;color:var(--accent,#d4a574);margin-top:12px}.current-game .dot{width:6px;height:6px;background:var(--accent,#d4a574);border-radius:50%;animation:pulse 2s infinite}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}`;
 function fmtDuration(seconds) {
     if (seconds < 60)
         return "just now";
@@ -468,7 +608,7 @@ function fmtDuration(seconds) {
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 function publicProfilePage(user, games, currentGame) {
-    const accent = user.accent_color || "#7b68ee";
+    const accent = user.accent_color || "#d4a574";
     const totalHours = Math.floor(games.reduce((s, g) => s + g.play_time_in_seconds, 0) / 3600);
     const hydraGames = [...games].filter(g => g.source !== "steam_sync")
         .sort((a, b) => (b.is_pinned ?? 0) - (a.is_pinned ?? 0) || b.play_time_in_seconds - a.play_time_in_seconds);
@@ -476,29 +616,29 @@ function publicProfilePage(user, games, currentGame) {
         .sort((a, b) => (b.is_pinned ?? 0) - (a.is_pinned ?? 0) || b.play_time_in_seconds - a.play_time_in_seconds);
     const steamHours = Math.floor(steamGames.reduce((s, g) => s + g.play_time_in_seconds, 0) / 3600);
     const currentGameStat = currentGame
-        ? `<div><span style="color:${accent};font-weight:600">${h(currentGame.title)}</span><br><span style="color:var(--sub)">currently playing</span></div>`
+        ? `<div class="current-game"><span class="dot"></span><span>${h(currentGame.title)}</span></div>`
         : "";
     return page(`@${user.username}`, `
     <div class="card wide" style="padding:0;overflow:hidden">
-      ${user.background_image_url ? `<div style="height:120px;background:url('${h(user.background_image_url)}') center/cover no-repeat;position:relative"></div>` : `<div style="height:60px;background:var(--bg3)"></div>`}
+      ${user.background_image_url ? `<div style="height:120px;background:url('${h(user.background_image_url)}') center/cover no-repeat;position:relative"></div>` : `<div style="height:60px;background:var(--bg-2)"></div>`}
       <div style="padding:0 32px 32px">
         <div style="display:flex;align-items:flex-end;gap:16px;margin-top:${user.background_image_url ? "-40px" : "-20px"};margin-bottom:16px;position:relative;z-index:1">
           ${user.profile_image_url
-        ? `<img src="${h(user.profile_image_url)}" style="width:72px;height:72px;border-radius:50%;border:3px solid var(--bg2);object-fit:cover;flex-shrink:0">`
-        : `<div style="width:72px;height:72px;border-radius:50%;border:3px solid var(--bg2);background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0">⬡</div>`}
+        ? `<img src="${h(user.profile_image_url)}" style="width:72px;height:72px;border:3px solid var(--bg-0);object-fit:cover;flex-shrink:0">`
+        : `<div style="width:72px;height:72px;border:3px solid var(--bg-0);background:var(--bg-2);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0">⬡</div>`}
           <div>
             <h1 style="margin:0">⬡ ${h(user.display_name || user.username)}</h1>
             <h2 style="margin:0">@${h(user.username)}${user.bio ? ` · ${h(user.bio)}` : ""}</h2>
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:24px;margin:16px 0;font-size:13px;flex-wrap:wrap">
-          <div><span style="color:${accent};font-size:18px;font-weight:bold">${games.length}</span><br><span style="color:var(--sub)">games</span></div>
-          <div><span style="color:${accent};font-size:18px;font-weight:bold">${totalHours.toLocaleString()}</span><br><span style="color:var(--sub)">total hours</span></div>
-          ${user.steam_id ? `<div><span style="color:${accent};font-size:18px;font-weight:bold">${steamHours.toLocaleString()}</span><br><span style="color:var(--sub)">steam hours</span></div>` : ""}
+          <div><span style="color:var(--accent);font-size:18px;font-weight:600">${games.length}</span><br><span style="color:var(--text-1)">games</span></div>
+          <div><span style="color:var(--accent);font-size:18px;font-weight:600">${totalHours.toLocaleString()}</span><br><span style="color:var(--text-1)">total hours</span></div>
+          ${user.steam_id ? `<div><span style="color:var(--accent);font-size:18px;font-weight:600">${steamHours.toLocaleString()}</span><br><span style="color:var(--text-1)">steam hours</span></div>` : ""}
           ${currentGameStat}
         </div>
         ${user.show_library !== 0 ? tabsHtml(hydraGames, steamGames, Boolean(user.steam_id), user.show_recent_activity !== 0, parseSectionsOrder(user.profile_sections_order)) : ""}
-        <p style="font-size:11px;color:var(--sub);margin-top:16px">Powered by <a href="https://github.com/entitybtw/hydra-selfhosted">Hydra Self-Hosted</a></p>
+        <p style="font-size:11px;color:var(--text-2);margin-top:16px">Powered by <a href="https://github.com/entitybtw/hydra-selfhosted">Hydra Self-Hosted</a></p>
       </div>
     </div>
   `, accent, DEFAULT_PROFILE_CSS + (user.custom_css || ""));
@@ -526,7 +666,6 @@ async function webRoutes(app) {
         const launcher = req.query.launcher === "1";
         return reply.type("text/html").send(loginPage(undefined, launcher));
     });
-    // Called by launcher to set gate cookie without exposing token in URL
     app.post("/web/launcher-gate", {
         config: { rawBody: true },
     }, async (req, reply) => {
@@ -538,7 +677,6 @@ async function webRoutes(app) {
             .setCookie("gate_ok", "1", { path: "/", httpOnly: true, maxAge: 60 * 60 * 24 * 7 })
             .send({ ok: true });
     });
-    // Auto-login via launcher userToken
     app.post("/web/auto-login", {
         config: { rawBody: true },
     }, async (req, reply) => {
@@ -578,7 +716,6 @@ async function webRoutes(app) {
             .setCookie("gate_ok", "1", { path: "/", httpOnly: true, maxAge: 60 * 60 * 24 * 7 })
             .redirect("/");
     });
-    // Login / register form handler
     app.post("/web/login", {
         config: { rawBody: true },
     }, async (req, reply) => {
@@ -612,7 +749,6 @@ async function webRoutes(app) {
             .setCookie("web_token", token, { path: "/", httpOnly: true, maxAge: 60 * 60 * 24 * 30 })
             .redirect("/web/dashboard");
     });
-    // Dashboard
     app.get("/web/dashboard", async (req, reply) => {
         const user = getUserFromCookie(req);
         if (!user)
@@ -620,7 +756,6 @@ async function webRoutes(app) {
         const games = db_1.db.prepare("SELECT * FROM games WHERE user_id = ? AND is_deleted = 0").all(user.id);
         return reply.type("text/html").send(dashboardPage(user, games));
     });
-    // Update profile
     app.post("/web/profile", {
         config: { rawBody: true },
     }, async (req, reply) => {
@@ -644,7 +779,6 @@ async function webRoutes(app) {
         const games = db_1.db.prepare("SELECT * FROM games WHERE user_id = ? AND is_deleted = 0").all(user.id);
         return reply.type("text/html").send(dashboardPage(updated, games, "Profile updated.", "ok"));
     });
-    // Steam settings + immediate sync
     app.post("/web/steam", {
         config: { rawBody: true },
     }, async (req, reply) => {
@@ -660,7 +794,6 @@ async function webRoutes(app) {
         const games = db_1.db.prepare("SELECT * FROM games WHERE user_id = ? AND is_deleted = 0").all(user.id);
         return reply.type("text/html").send(dashboardPage(updated, games, "Steam synced.", "ok"));
     });
-    // Change password
     app.post("/web/password", {
         config: { rawBody: true },
     }, async (req, reply) => {
@@ -681,7 +814,6 @@ async function webRoutes(app) {
         const games = db_1.db.prepare("SELECT * FROM games WHERE user_id = ? AND is_deleted = 0").all(user.id);
         return reply.type("text/html").send(dashboardPage(user, games, "Password changed.", "ok"));
     });
-    // Pin / unpin game from dashboard
     app.post("/web/favorite", { config: { rawBody: true } }, async (req, reply) => {
         const user = getUserFromCookie(req);
         if (!user)
@@ -721,7 +853,6 @@ async function webRoutes(app) {
         }
         return reply.redirect("/web/dashboard");
     });
-    // Upload avatar / banner
     app.post("/web/upload-avatar", async (req, reply) => {
         const user = getUserFromCookie(req);
         if (!user)
@@ -755,11 +886,9 @@ async function webRoutes(app) {
         db_1.db.prepare("UPDATE users SET background_image_url = NULL WHERE id = ?").run(user.id);
         return reply.send({ ok: true });
     });
-    // Logout
     app.get("/web/logout", async (_req, reply) => {
         return reply.clearCookie("web_token", { path: "/" }).redirect("/");
     });
-    // Public profile — HTML
     app.get("/u/:username", async (req, reply) => {
         const user = db_1.db.prepare("SELECT * FROM users WHERE username = ?")
             .get(req.params.username);
