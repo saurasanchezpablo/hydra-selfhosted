@@ -180,7 +180,7 @@ export async function publicApiRoutes(app: FastifyInstance) {
 
   // GET /api/users/:username/library
   app.get("/api/users/:username/library", async (
-    req: FastifyRequest<{ Params: { username: string }; Querystring: { take?: string; skip?: string; sortBy?: string } }>,
+    req: FastifyRequest<{ Params: { username: string }; Querystring: { take?: string; skip?: string; sortBy?: string; shop?: string } }>,
     reply: FastifyReply
   ) => {
     const user = db.prepare("SELECT id FROM users WHERE username = ?")
@@ -190,12 +190,22 @@ export async function publicApiRoutes(app: FastifyInstance) {
     const skip = parseInt(req.query.skip ?? "0", 10);
     const take = Math.min(parseInt(req.query.take ?? "30", 10), 100);
     const sortBy = req.query.sortBy === "playedRecently" ? "last_time_played DESC NULLS LAST" : "title ASC";
+    const shopFilter = req.query.shop && ["steam", "hydra"].includes(req.query.shop) ? req.query.shop : null;
 
-    const games = db.prepare(
-      `SELECT * FROM games WHERE user_id = ? AND is_deleted = 0 ORDER BY is_pinned DESC, ${sortBy} LIMIT ? OFFSET ?`
-    ).all(user.id, take, skip) as DbGame[];
+    const query = shopFilter
+      ? `SELECT * FROM games WHERE user_id = ? AND is_deleted = 0 AND shop = ? ORDER BY is_pinned DESC, ${sortBy} LIMIT ? OFFSET ?`
+      : `SELECT * FROM games WHERE user_id = ? AND is_deleted = 0 ORDER BY is_pinned DESC, ${sortBy} LIMIT ? OFFSET ?`;
+    const games = shopFilter
+      ? db.prepare(query).all(user.id, shopFilter, take, skip) as DbGame[]
+      : db.prepare(query).all(user.id, take, skip) as DbGame[];
 
-    const total = (db.prepare("SELECT COUNT(*) as c FROM games WHERE user_id = ? AND is_deleted = 0").get(user.id) as any).c;
+    const totalQuery = shopFilter
+      ? "SELECT COUNT(*) as c FROM games WHERE user_id = ? AND is_deleted = 0 AND shop = ?"
+      : "SELECT COUNT(*) as c FROM games WHERE user_id = ? AND is_deleted = 0";
+    const total = (shopFilter
+      ? db.prepare(totalQuery).get(user.id, shopFilter) as any
+      : db.prepare(totalQuery).get(user.id) as any
+    ).c;
 
     return reply.send({
       games: games.map(formatGame),

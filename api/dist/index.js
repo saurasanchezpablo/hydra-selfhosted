@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const fastify_1 = __importDefault(require("fastify"));
 const cookie_1 = __importDefault(require("@fastify/cookie"));
 const multipart_1 = __importDefault(require("@fastify/multipart"));
+const cors_1 = __importDefault(require("@fastify/cors"));
 const auth_1 = require("./routes/auth");
 const profile_1 = require("./routes/profile");
 const games_1 = require("./routes/games");
@@ -19,12 +20,18 @@ const reviews_1 = require("./routes/reviews");
 const public_api_1 = require("./routes/public-api");
 const docs_1 = require("./routes/docs");
 const passkeys_1 = require("./routes/passkeys");
+const admin_1 = require("./routes/admin");
 const steam_sync_1 = require("./steam-sync");
 const maxSaveSizeMb = Number(process.env.MAX_SAVE_SIZE_MB) || 50;
 const maxSaveSizeBytes = maxSaveSizeMb * 1024 * 1024;
 const app = (0, fastify_1.default)({ logger: true, bodyLimit: maxSaveSizeBytes });
 app.register(cookie_1.default);
 app.register(multipart_1.default, { limits: { fileSize: maxSaveSizeBytes } });
+app.register(cors_1.default, {
+    origin: ["https://your-domain.com", "http://localhost:3000"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+});
 app.addContentTypeParser("application/tar", { parseAs: "buffer" }, (_req, body, done) => {
     done(null, body);
 });
@@ -57,6 +64,7 @@ app.register(reviews_1.reviewsRoutes);
 app.register(public_api_1.publicApiRoutes);
 app.register(docs_1.docsRoutes);
 app.register(passkeys_1.passkeyRoutes);
+app.register(admin_1.adminRoutes);
 app.get("/health", async () => ({ status: "ok" }));
 const port = parseInt(process.env.PORT ?? "3000", 10);
 app.listen({ port, host: "0.0.0.0" }).then(() => {

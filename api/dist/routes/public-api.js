@@ -174,8 +174,19 @@ async function publicApiRoutes(app) {
         const skip = parseInt(req.query.skip ?? "0", 10);
         const take = Math.min(parseInt(req.query.take ?? "30", 10), 100);
         const sortBy = req.query.sortBy === "playedRecently" ? "last_time_played DESC NULLS LAST" : "title ASC";
-        const games = db_1.db.prepare(`SELECT * FROM games WHERE user_id = ? AND is_deleted = 0 ORDER BY is_pinned DESC, ${sortBy} LIMIT ? OFFSET ?`).all(user.id, take, skip);
-        const total = db_1.db.prepare("SELECT COUNT(*) as c FROM games WHERE user_id = ? AND is_deleted = 0").get(user.id).c;
+        const shopFilter = req.query.shop && ["steam", "hydra"].includes(req.query.shop) ? req.query.shop : null;
+        const query = shopFilter
+            ? `SELECT * FROM games WHERE user_id = ? AND is_deleted = 0 AND shop = ? ORDER BY is_pinned DESC, ${sortBy} LIMIT ? OFFSET ?`
+            : `SELECT * FROM games WHERE user_id = ? AND is_deleted = 0 ORDER BY is_pinned DESC, ${sortBy} LIMIT ? OFFSET ?`;
+        const games = shopFilter
+            ? db_1.db.prepare(query).all(user.id, shopFilter, take, skip)
+            : db_1.db.prepare(query).all(user.id, take, skip);
+        const totalQuery = shopFilter
+            ? "SELECT COUNT(*) as c FROM games WHERE user_id = ? AND is_deleted = 0 AND shop = ?"
+            : "SELECT COUNT(*) as c FROM games WHERE user_id = ? AND is_deleted = 0";
+        const total = (shopFilter
+            ? db_1.db.prepare(totalQuery).get(user.id, shopFilter)
+            : db_1.db.prepare(totalQuery).get(user.id)).c;
         return reply.send({
             games: games.map(formatGame),
             total,

@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import fastifyCookie from "@fastify/cookie";
 import fastifyMultipart from "@fastify/multipart";
+import fastifyCors from "@fastify/cors";
 import { authRoutes } from "./routes/auth";
 import { profileRoutes } from "./routes/profile";
 import { gamesRoutes } from "./routes/games";
@@ -14,6 +15,7 @@ import { reviewsRoutes } from "./routes/reviews";
 import { publicApiRoutes } from "./routes/public-api";
 import { docsRoutes } from "./routes/docs";
 import { passkeyRoutes } from "./routes/passkeys";
+import { adminRoutes } from "./routes/admin";
 import { startSteamSyncScheduler } from "./steam-sync";
 
 const maxSaveSizeMb = Number(process.env.MAX_SAVE_SIZE_MB) || 50;
@@ -23,6 +25,11 @@ const app = Fastify({ logger: true, bodyLimit: maxSaveSizeBytes });
 
 app.register(fastifyCookie);
 app.register(fastifyMultipart, { limits: { fileSize: maxSaveSizeBytes } });
+app.register(fastifyCors, {
+  origin: ["https://your-domain.com", "http://localhost:3000"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+});
 
 app.addContentTypeParser("application/tar", { parseAs: "buffer" }, (_req, body, done) => {
   done(null, body);
@@ -56,6 +63,7 @@ app.register(reviewsRoutes);
 app.register(publicApiRoutes);
 app.register(docsRoutes);
 app.register(passkeyRoutes);
+app.register(adminRoutes);
 
 app.get("/health", async () => ({ status: "ok" }));
 
