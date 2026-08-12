@@ -136,143 +136,138 @@ const CSS = `
   :root {
     --bg-0: #0f0f0f;
     --bg-1: #1a1a1a;
-    --bg-2: #222222;
+    --bg-2: #222;
     --bg-3: #2a2a2a;
     --bg-hover: #252525;
-    --text-0: #dddddd;
-    --text-1: #999999;
-    --text-2: #666669;
+    --text-0: #ddd;
+    --text-1: #999;
+    --text-2: #666;
     --border-1: #2a2a2a;
-    --border-2: #333333;
+    --border-2: #333;
     --accent: #d4a574;
-    --accent-bright: #e6bb93;
-    --accent-glow: rgba(212,165,116,0.15);
-    --border-acc: rgba(212,165,116,0.3);
+    --accent-bright: #e0b685;
+    --accent-glow: #1c1a15;
+    --border-acc: rgba(212,165,116,0.25);
     --err: #d77;
     --ok: #7a9;
     --font-sans: system-ui, -apple-system, sans-serif;
-    --font-mono: ui-monospace, "JetBrains Mono", "Cascadia Code", "Fira Code", monospace;
+    --font-mono: ui-monospace, "JetBrains Mono", "Cascadia Code", monospace;
   }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; scrollbar-width: thin; scrollbar-color: var(--border-2) var(--bg-0); }
   body {
     background: var(--bg-0);
     color: var(--text-0);
     font-family: var(--font-sans);
     font-size: 14px;
     min-height: 100vh;
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    padding: 40px 20px;
     line-height: 1.5;
   }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 0 16px; }
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
-  h1 { font-size: 1.1rem; font-weight: 600; color: var(--text-0); letter-spacing: -0.3px; }
+  h1 { font-size: 1.2rem; font-weight: 600; color: var(--text-0); letter-spacing: -0.3px; }
   h2 { font-size: 13px; color: var(--text-1); font-weight: 400; }
   h3 {
-    font-size: 11px;
+    font-size: 0.75rem;
     color: var(--text-2);
-    margin: 24px 0 10px;
+    margin: 20px 0 8px;
     text-transform: uppercase;
     letter-spacing: 0.1em;
     font-weight: 600;
   }
   label {
     display: block;
-    font-size: 12px;
+    font-size: 0.75rem;
     color: var(--text-1);
-    margin-bottom: 4px;
+    margin-bottom: 3px;
     font-weight: 500;
   }
   input, textarea, select {
     width: 100%;
-    background: var(--bg-0);
-    border: 1px solid var(--border-1);
+    background: var(--bg-2);
+    border: 1px solid var(--border-2);
     border-radius: 0;
-    padding: 9px 12px;
+    padding: 6px 8px;
     color: var(--text-0);
     font-family: var(--font-mono);
-    font-size: 13px;
+    font-size: 0.8rem;
     outline: none;
     transition: border-color 0.15s;
   }
-  input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+  input:focus, textarea:focus, select:focus { border-color: var(--border-acc); }
   textarea { resize: vertical; min-height: 60px; }
-  .field { margin-bottom: 14px; }
+  .field { margin-bottom: 10px; }
   button, .btn {
     background: var(--accent);
-    color: #111;
-    border: none;
+    color: #000;
+    border: 1px solid var(--accent);
     border-radius: 0;
-    padding: 10px 18px;
+    padding: 6px 12px;
     font-family: var(--font-sans);
-    font-size: 13px;
-    font-weight: 600;
+    font-size: 0.8rem;
+    font-weight: 500;
     cursor: pointer;
     width: 100%;
-    transition: opacity 0.15s, transform 0.1s;
+    transition: border-color 0.15s, color 0.15s, transform 0.1s;
   }
-  button:hover, .btn:hover { opacity: 0.85; }
+  button:hover, .btn:hover { background: var(--accent-bright); border-color: var(--accent-bright); }
   button:active { transform: scale(0.98); }
   .btn-ghost {
     background: transparent;
-    border: 1px solid var(--border-1);
-    color: var(--text-1);
+    border: 1px solid var(--border-2);
+    color: var(--text-0);
   }
-  .btn-ghost:hover { border-color: var(--accent); color: var(--text-0); }
+  .btn-ghost:hover { border-color: var(--border-acc); color: var(--accent); background: var(--accent-glow); }
   .err {
     background: rgba(221,119,119,0.08);
     border: 1px solid rgba(221,119,119,0.25);
-    padding: 10px 14px;
-    font-size: 12px;
+    padding: 8px 12px;
+    font-size: 0.75rem;
     color: var(--err);
-    margin-bottom: 14px;
+    margin-bottom: 10px;
   }
   .ok {
     background: rgba(119,170,153,0.08);
     border: 1px solid rgba(119,170,153,0.25);
-    padding: 10px 14px;
-    font-size: 12px;
+    padding: 8px 12px;
+    font-size: 0.75rem;
     color: var(--ok);
-    margin-bottom: 14px;
+    margin-bottom: 10px;
   }
   .warn {
-    background: rgba(212,165,116,0.06);
+    background: var(--accent-glow);
     border: 1px solid var(--border-acc);
-    padding: 10px 14px;
-    font-size: 12px;
+    padding: 8px 12px;
+    font-size: 0.75rem;
     color: var(--accent);
-    margin-bottom: 14px;
+    margin-bottom: 10px;
   }
   .card {
     background: var(--bg-1);
     border: 1px solid var(--border-1);
-    padding: 32px;
+    padding: 16px;
     width: 100%;
     max-width: 420px;
-    transition: border-color 0.15s;
   }
-  .card:hover { border-color: var(--border-2); }
-  .card.wide { max-width: 720px; padding: 0; }
-  .row { display: flex; gap: 10px; }
+  .card.wide { max-width: 100%; padding: 0; }
+  .row { display: flex; gap: 8px; }
   .row button { flex: 1; }
   .token-box {
-    background: var(--bg-0);
-    border: 1px solid var(--border-1);
-    padding: 10px 12px;
+    background: var(--bg-2);
+    border: 1px solid var(--border-2);
+    padding: 8px 10px;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: 0.75rem;
     word-break: break-all;
     color: var(--text-1);
   }
   .tab-btn {
     background: transparent;
-    border: 1px solid var(--border-1);
+    border: 1px solid var(--border-2);
     color: var(--text-1);
     width: auto;
-    padding: 6px 14px;
-    font-size: 12px;
+    padding: 4px 12px;
+    font-size: 0.8rem;
     border-radius: 0;
     font-family: var(--font-sans);
     font-weight: 500;
@@ -280,7 +275,7 @@ const CSS = `
   .tab-btn.active {
     background: var(--accent);
     border-color: var(--accent);
-    color: #111;
+    color: #000;
   }
   .tab-btn:hover { opacity: 0.85; }
   th {
@@ -288,31 +283,60 @@ const CSS = `
     text-align: left;
     padding: 6px 8px;
     border-bottom: 1px solid var(--border-1);
-    font-size: 11px;
+    font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     font-family: var(--font-mono);
     font-weight: 500;
   }
   td {
-    padding: 8px;
+    padding: 6px 8px;
     border-bottom: 1px solid var(--bg-2);
     color: var(--text-0);
-    font-size: 13px;
+    font-size: 0.8rem;
   }
   tr:last-child td { border-bottom: none; }
   table { width: 100%; border-collapse: collapse; }
   .tag {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: 0.7rem;
     background: var(--accent-glow);
     border: 1px solid var(--border-acc);
-    padding: 2px 8px;
+    padding: 2px 6px;
     color: var(--accent);
     display: inline-block;
   }
-  .meta { font-size: 12px; color: var(--text-2); text-align: center; margin-top: 16px; }
+  .tag-ok { background: rgba(119,170,153,0.1); border-color: rgba(119,170,153,0.3); color: var(--ok); }
+  .tag-warn { background: rgba(221,119,119,0.08); border-color: rgba(221,119,119,0.25); color: var(--err); }
+  .meta { font-size: 0.75rem; color: var(--text-2); text-align: center; margin-top: 12px; }
   input[type="checkbox"] { width: auto; }
+  .section { padding: 8px 0; }
+  .nav {
+    border-bottom: 1px solid var(--border-1);
+    padding: 8px 16px;
+    margin-bottom: 16px;
+  }
+  .nav-inner { max-width: 1100px; margin: 0 auto; display: flex; align-items: center; gap: 8px; }
+  .nav-logo { font-size: 0.85rem; font-weight: 600; color: var(--accent); text-decoration: none; letter-spacing: -0.3px; }
+  .nav-logo:hover { text-decoration: none; }
+  .nav-links { display: flex; gap: 4px; margin: 0 auto; }
+  .nav-links a { font-size: 0.76rem; color: var(--text-1); padding: 4px 8px; }
+  .nav-links a:hover, .nav-links a.active { color: var(--text-0); text-decoration: none; }
+  .nav-controls { display: flex; gap: 4px; margin-left: auto; align-items: center; }
+  .btn-icon {
+    padding: 4px 9px; border: 1px solid var(--border-2); background: transparent;
+    color: var(--text-1); font-size: 0.75rem; font-family: var(--font-mono); min-width: 28px;
+    width: auto; cursor: pointer; transition: border-color 0.15s, color 0.15s;
+  }
+  .btn-icon:hover { border-color: var(--border-acc); color: var(--accent); background: var(--accent-glow); }
+  @media (max-width: 680px) {
+    body { padding: 0; }
+    .card.wide { border-radius: 0; }
+    input, select, textarea { font-size: 16px !important; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
 `;
 function contrastColor(hex) {
     const r = parseInt(hex.slice(1, 3), 16);
@@ -321,7 +345,7 @@ function contrastColor(hex) {
     return (r * 299 + g * 587 + b * 114) / 1000 > 128 ? "#111111" : "#ffffff";
 }
 function page(title, body, accent = "#d4a574", customCss = "") {
-    return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${h(title)} — Hydra</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet"><style>${CSS}:root{--accent:${accent};--accent-bright:${accent}cc;--accent-glow:${accent}26;--border-acc:${accent}4d;--btn-contrast:${contrastColor(accent)}}${customCss ? customCss : ""}</style></head><body>${body}</body></html>`;
+    return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${h(title)} — Hydra</title><style>${CSS}:root{--accent:${accent};--accent-bright:${accent}cc;--accent-glow:${accent}26;--border-acc:${accent}4d;--btn-contrast:${contrastColor(accent)}}${customCss ? customCss : ""}</style></head><body>${body}</body></html>`;
 }
 function getGlobalAccent() {
     return db_1.db.prepare("SELECT value FROM settings WHERE key = 'global_accent_color'").get()?.value ?? "#d4a574";
@@ -329,34 +353,38 @@ function getGlobalAccent() {
 function tokenGatePage(error) {
     const accent = getGlobalAccent();
     return page("Access", `
-    <div class="card">
-      <h1>⬡ Hydra Self-Hosted</h1>
-      <h2>Enter your API token to continue</h2>
-      ${error ? `<div class="err">${h(error)}</div>` : ""}
-      <form method="POST" action="/web/gate">
-        <div class="field"><label>API Token</label><input name="instance_token" type="password" autofocus required></div>
-        <button type="submit">Continue</button>
-      </form>
+    <div class="wrap" style="display:flex;align-items:center;justify-content:center;min-height:100vh">
+      <div class="card">
+        <h1>Hydra Self-Hosted</h1>
+        <h2>Enter your API token to continue</h2>
+        ${error ? `<div class="err">${h(error)}</div>` : ""}
+        <form method="POST" action="/web/gate">
+          <div class="field"><label>API Token</label><input name="instance_token" type="password" autofocus required></div>
+          <button type="submit">Continue</button>
+        </form>
+      </div>
     </div>
   `, accent);
 }
 function loginPage(error, launcher = false) {
     const accent = getGlobalAccent();
     return page("Sign in", `
-    <div class="card">
-      <h1>⬡ Hydra Self-Hosted</h1>
-      <h2>Sign in to your account</h2>
-      ${error ? `<div class="err">${h(error)}</div>` : ""}
-      <form method="POST" action="/web/login">
-        <input type="hidden" name="launcher" value="${launcher ? "1" : ""}">
-        <div class="field"><label>Username</label><input name="username" autocomplete="username" required autofocus></div>
-        <div class="field"><label>Password</label><input name="password" type="password" autocomplete="current-password" required></div>
-        <div class="row">
-          <button type="submit" name="action" value="login">Sign in</button>
-          <button type="submit" name="action" value="register" class="btn-ghost">Register</button>
-        </div>
-      </form>
-      <p class="meta">Hydra Launcher self-hosted instance</p>
+    <div class="wrap" style="display:flex;align-items:center;justify-content:center;min-height:100vh">
+      <div class="card">
+        <h1>Hydra Self-Hosted</h1>
+        <h2>Sign in to your account</h2>
+        ${error ? `<div class="err">${h(error)}</div>` : ""}
+        <form method="POST" action="/web/login">
+          <input type="hidden" name="launcher" value="${launcher ? "1" : ""}">
+          <div class="field"><label>Username</label><input name="username" autocomplete="username" required autofocus></div>
+          <div class="field"><label>Password</label><input name="password" type="password" autocomplete="current-password" required></div>
+          <div class="row">
+            <button type="submit" name="action" value="login">Sign in</button>
+            <button type="submit" name="action" value="register" class="btn-ghost">Register</button>
+          </div>
+        </form>
+        <p class="meta">Hydra Launcher self-hosted instance</p>
+      </div>
     </div>
   `, accent);
 }
@@ -491,6 +519,18 @@ function dashboardPage(user, games, msg, msgType = "ok") {
         "async function registerPasskey(){try{const optsRes=await fetch('/web/passkeys/register/options',{method:'POST',headers:{'Content-Type':'application/json'}});const opts=await optsRes.json();if(opts.error){alert(opts.error);return;}const cred=await navigator.credentials.create({publicKey:opts});const verifyRes=await fetch('/web/passkeys/register/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:cred.id,rawId:btoa(String.fromCharCode.apply(null,new Uint8Array(cred.rawId))),type:cred.type,response:{attestationObject:btoa(String.fromCharCode.apply(null,new Uint8Array(cred.response.attestationObject))),clientDataJSON:btoa(String.fromCharCode.apply(null,new Uint8Array(cred.response.clientDataJSON)))},label:navigator.userAgent.includes('Mobile')?'Mobile device':'Browser'})});const result=await verifyRes.json();if(result.verified){loadPasskeys();}else{alert('Registration failed');}}catch(e){if(e.name!=='NotAllowedError')alert('Passkey error: '+e.message);}}",
     ].join("\n");
     return page("Dashboard", `
+    <nav class="nav"><div class="nav-inner">
+      <a href="/web/dashboard" class="nav-logo">Hydra</a>
+      <div class="nav-links">
+        <a href="/web/dashboard" class="active">Dashboard</a>
+        <a href="/u/${h(user.username)}" target="_blank">Profile</a>
+        ${isAdmin ? `<a href="/web/admin">Admin</a>` : ""}
+      </div>
+      <div class="nav-controls">
+        <a href="/web/logout" class="btn-icon" style="text-decoration:none">Sign out</a>
+      </div>
+    </div></nav>
+    <div class="wrap">
     <div class="card wide" style="padding:0;overflow:hidden">
       <div style="position:relative">
         ${user.background_image_url
@@ -595,11 +635,9 @@ function dashboardPage(user, games, msg, msgType = "ok") {
       <p style="font-size:12px;color:var(--text-1);margin-bottom:8px">Use this URL in Hydra Launcher settings:</p>
       <div class="token-box">${h(process.env.PUBLIC_URL ?? "http://localhost:" + (process.env.PORT ?? "3000"))}</div>
 
-      <div style="margin-top:24px">
-        <a href="/u/${h(user.username)}" target="_blank" class="btn btn-ghost" style="display:inline-block;padding:8px 14px;font-size:12px">View public profile ↗</a>
-        &nbsp;
-        ${isAdmin ? `<a href="/web/admin" class="btn btn-ghost" style="display:inline-block;padding:8px 14px;font-size:12px">Admin panel ↗</a> &nbsp;` : ""}
-        <a href="/web/logout" style="font-size:12px;color:var(--text-1)">Sign out</a>
+      <div style="margin-top:24px;display:flex;gap:8px;flex-wrap:wrap">
+        <a href="/u/${h(user.username)}" target="_blank" class="btn btn-ghost" style="display:inline-block;padding:6px 12px;font-size:0.75rem">Public profile ↗</a>
+        ${isAdmin ? `<a href="/web/admin" class="btn btn-ghost" style="display:inline-block;padding:6px 12px;font-size:0.75rem">Admin ↗</a>` : ""}
       </div>
       </div>
     </div>
@@ -622,6 +660,7 @@ function dashboardPage(user, games, msg, msgType = "ok") {
           <button onclick="applyCrop()" style="width:auto;padding:8px 16px">Save avatar</button>
         </div>
       </div>
+    </div>
     </div>
 
     <script>${DASHBOARD_JS}
@@ -654,6 +693,14 @@ function publicProfilePage(user, games, currentGame) {
         ? `<div class="current-game"><span class="dot"></span><span>${h(currentGame.title)}</span></div>`
         : "";
     return page(`@${user.username}`, `
+    <nav class="nav"><div class="nav-inner">
+      <a href="/" class="nav-logo">Hydra</a>
+      <div class="nav-links">
+        <a href="/u/${h(user.username)}" class="active">Profile</a>
+      </div>
+      <div class="nav-controls"></div>
+    </div></nav>
+    <div class="wrap">
     <div class="card wide" style="padding:0;overflow:hidden">
       ${user.background_image_url ? `<div style="height:120px;background:url('${h(user.background_image_url)}') center/cover no-repeat;position:relative"></div>` : `<div style="height:60px;background:var(--bg-2)"></div>`}
       <div style="padding:0 32px 32px">
@@ -675,6 +722,7 @@ function publicProfilePage(user, games, currentGame) {
         ${user.show_library !== 0 ? tabsHtml(hydraGames, steamGames, Boolean(user.steam_id), user.show_recent_activity !== 0, parseSectionsOrder(user.profile_sections_order)) : ""}
         <p style="font-size:11px;color:var(--text-2);margin-top:16px">Powered by <a href="https://github.com/entitybtw/hydra-selfhosted">Hydra Self-Hosted</a></p>
       </div>
+    </div>
     </div>
   `, accent, DEFAULT_PROFILE_CSS + (user.custom_css || ""));
 }
@@ -964,7 +1012,7 @@ async function webRoutes(app) {
             const games = db_1.db.prepare("SELECT * FROM games WHERE user_id = ? AND is_deleted = 0").all(user.id);
             return reply.type("text/html").send(dashboardPage(user, games, "Admin role required.", "err"));
         }
-        const color = req.body?.color;
+        const color = req.body?.color_hex || req.body?.color;
         if (color && /^#[0-9a-fA-F]{6}$/.test(color)) {
             db_1.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('global_accent_color', ?)").run(color);
         }
@@ -1060,7 +1108,7 @@ async function webRoutes(app) {
         return user;
     }
     function adminPage(adminUser, msg, msgType = "ok") {
-        const accent = adminUser.accent_color || getGlobalAccent();
+        const accent = getGlobalAccent();
         const users = db_1.db.prepare(`
       SELECT u.id, u.username, u.display_name, u.roles, u.is_banned, u.created_at,
         (SELECT COUNT(*) FROM games WHERE user_id = u.id AND is_deleted = 0) as game_count,
@@ -1073,14 +1121,25 @@ async function webRoutes(app) {
         const globalAccent = db_1.db.prepare("SELECT value FROM settings WHERE key = 'global_accent_color'").get()?.value ?? "#d4a574";
         const fmtH = (s) => { const h = Math.floor((s ?? 0) / 3600); return h >= 1000 ? h.toLocaleString() + "h" : h + "h"; };
         return page("Admin", `
+      <nav class="nav"><div class="nav-inner">
+        <a href="/web/dashboard" class="nav-logo">Hydra</a>
+        <div class="nav-links">
+          <a href="/web/dashboard">Dashboard</a>
+          <a href="/web/admin" class="active">Admin</a>
+        </div>
+        <div class="nav-controls">
+          <a href="/web/logout" class="btn-icon" style="text-decoration:none">Sign out</a>
+        </div>
+      </div></nav>
+      <div class="wrap">
       <div class="card wide" style="padding:0;overflow:hidden">
-        <div style="padding:24px 32px 32px">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px">
+        <div style="padding:16px 24px 24px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
             <div>
               <h1>Admin Panel</h1>
               <h2>Manage users, settings, and server</h2>
             </div>
-            <a href="/web/dashboard" style="font-size:12px;color:var(--text-1)">← Back to dashboard</a>
+            <a href="/web/dashboard" style="font-size:0.75rem;color:var(--text-1)">← Back to dashboard</a>
           </div>
 
           ${msg ? `<div class="${msgType}">${h(msg)}</div>` : ""}
@@ -1108,8 +1167,8 @@ async function webRoutes(app) {
           <h3>Global accent color</h3>
           <form method="POST" action="/web/admin/global-accent" style="margin-bottom:24px">
             <div style="display:flex;gap:8px;align-items:center">
-              <input type="color" name="color" value="${h(globalAccent)}" style="width:40px;height:32px;padding:2px;cursor:pointer;border-radius:0">
-              <input name="color_hex" value="${h(globalAccent)}" maxlength="7" style="flex:1" placeholder="#d4a574">
+              <input type="color" name="color" id="admin-accent-picker" value="${h(globalAccent)}" style="width:40px;height:32px;padding:2px;cursor:pointer;border-radius:0" oninput="document.getElementById('admin-accent-hex').value=this.value">
+              <input name="color_hex" id="admin-accent-hex" value="${h(globalAccent)}" maxlength="7" style="flex:1" placeholder="#d4a574" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value))document.getElementById('admin-accent-picker').value=this.value">
               <button type="submit" style="width:auto;padding:8px 16px">Save</button>
             </div>
           </form>
@@ -1173,6 +1232,7 @@ async function webRoutes(app) {
           </div>
         </div>
       </div>
+      </div>
     `, accent);
     }
     app.get("/web/admin", async (req, reply) => {
@@ -1185,7 +1245,7 @@ async function webRoutes(app) {
         const admin = checkAdmin(req);
         if (!admin)
             return reply.redirect("/web/dashboard");
-        const color = req.body?.color || req.body?.color_hex;
+        const color = req.body?.color_hex || req.body?.color;
         if (color && /^#[0-9a-fA-F]{6}$/.test(color)) {
             db_1.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('global_accent_color', ?)").run(color);
         }
