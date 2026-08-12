@@ -203,7 +203,16 @@ try { db.exec(`INSERT OR IGNORE INTO settings (key, value) VALUES ('global_accen
 // Export for on-demand initial admin assignment
 export function enforceInitialAdmin() {
   const INITIAL_ADMIN = process.env.INITIAL_ADMIN_USERNAME;
-  if (!INITIAL_ADMIN) return;
+  if (!INITIAL_ADMIN) {
+    // Fallback: make the first user admin if no admin exists
+    const anyAdmin = db.prepare("SELECT 1 FROM users WHERE roles LIKE '%admin%'").get();
+    if (anyAdmin) return;
+    const firstUser = db.prepare("SELECT id FROM users ORDER BY created_at ASC LIMIT 1").get() as { id: string } | undefined;
+    if (!firstUser) return;
+    db.prepare("UPDATE users SET roles = ? WHERE id = ?").run(JSON.stringify(["admin"]), firstUser.id);
+    console.log(`[db] No admin found — auto-promoted first user to admin`);
+    return;
+  }
   const row = db.prepare("SELECT id, roles FROM users WHERE username = ?").get(INITIAL_ADMIN) as { id: string; roles: string | null } | undefined;
   if (!row) return;
   let alreadyAdmin = false;

@@ -238,8 +238,18 @@ catch { }
 // Export for on-demand initial admin assignment
 function enforceInitialAdmin() {
     const INITIAL_ADMIN = process.env.INITIAL_ADMIN_USERNAME;
-    if (!INITIAL_ADMIN)
+    if (!INITIAL_ADMIN) {
+        // Fallback: make the first user admin if no admin exists
+        const anyAdmin = exports.db.prepare("SELECT 1 FROM users WHERE roles LIKE '%admin%'").get();
+        if (anyAdmin)
+            return;
+        const firstUser = exports.db.prepare("SELECT id FROM users ORDER BY created_at ASC LIMIT 1").get();
+        if (!firstUser)
+            return;
+        exports.db.prepare("UPDATE users SET roles = ? WHERE id = ?").run(JSON.stringify(["admin"]), firstUser.id);
+        console.log(`[db] No admin found — auto-promoted first user to admin`);
         return;
+    }
     const row = exports.db.prepare("SELECT id, roles FROM users WHERE username = ?").get(INITIAL_ADMIN);
     if (!row)
         return;
