@@ -43,6 +43,7 @@ function formatGame(g: DbGame) {
     id: g.id,
     objectId: g.object_id,
     shop: g.shop,
+    source: g.source ?? null,
     title: g.title,
     playTimeInMilliseconds: g.play_time_in_seconds * 1000,
     lastTimePlayed: g.last_time_played ? new Date(g.last_time_played * 1000).toISOString() : null,
