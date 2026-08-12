@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import bcrypt from "bcryptjs";
-import { db, IMAGES_DIR } from "../db";
+import { db, IMAGES_DIR, enforceInitialAdmin } from "../db";
 import { signAccess, verifyToken } from "../auth";
 import { syncSteamGames } from "../steam-sync";
 
@@ -22,6 +22,8 @@ interface DbUser {
   show_recent_activity: number;
   show_library: number;
   profile_sections_order: string | null;
+  roles: string | null;
+  is_banned: number;
 }
 
 interface DbGame {
@@ -471,7 +473,7 @@ function dashboardPage(user: DbUser, games: DbGame[], msg?: string, msgType: "ok
 
   const isAdmin = (() => {
     try {
-      const roles = JSON.parse((user as any).roles || "[]");
+      const roles = JSON.parse(user.roles || "[]");
       return Array.isArray(roles) && roles.includes("admin");
     } catch { return false; }
   })();
@@ -699,6 +701,7 @@ function getUserFromCookie(req: FastifyRequest): DbUser | null {
   if (!token) return null;
   try {
     const userId = verifyToken(token, "access");
+    enforceInitialAdmin();
     return db.prepare("SELECT * FROM users WHERE id = ?").get(userId) as DbUser | null;
   } catch {
     return null;
@@ -1068,7 +1071,7 @@ export async function webRoutes(app: FastifyInstance) {
     const user = getUserFromCookie(req);
     if (!user) return null;
     try {
-      const roles = JSON.parse((user as any).roles || "[]");
+      const roles = JSON.parse(user.roles || "[]");
       if (!Array.isArray(roles) || !roles.includes("admin")) return null;
     } catch { return null; }
     return user;

@@ -678,6 +678,7 @@ function getUserFromCookie(req) {
         return null;
     try {
         const userId = (0, auth_1.verifyToken)(token, "access");
+        (0, db_1.enforceInitialAdmin)();
         return db_1.db.prepare("SELECT * FROM users WHERE id = ?").get(userId);
     }
     catch {
