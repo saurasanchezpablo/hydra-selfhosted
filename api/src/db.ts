@@ -199,3 +199,20 @@ db.exec(`
   );
 `);
 try { db.exec(`INSERT OR IGNORE INTO settings (key, value) VALUES ('global_accent_color', '#d4a574')`); } catch {}
+
+// Assign initial admin from env
+const INITIAL_ADMIN = process.env.INITIAL_ADMIN_USERNAME;
+if (INITIAL_ADMIN) {
+  const row = db.prepare("SELECT id, roles FROM users WHERE username = ?").get(INITIAL_ADMIN) as { id: string; roles: string | null } | undefined;
+  if (row) {
+    let alreadyAdmin = false;
+    try {
+      const roles = JSON.parse(row.roles || "[]");
+      alreadyAdmin = Array.isArray(roles) && roles.includes("admin");
+    } catch {}
+    if (!alreadyAdmin) {
+      db.prepare("UPDATE users SET roles = ? WHERE id = ?").run(JSON.stringify(["admin"]), row.id);
+      console.log(`[db] Assigned admin role to user "${INITIAL_ADMIN}"`);
+    }
+  }
+}
