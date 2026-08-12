@@ -323,7 +323,11 @@ function contrastColor(hex) {
 function page(title, body, accent = "#d4a574", customCss = "") {
     return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${h(title)} — Hydra</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet"><style>${CSS}:root{--accent:${accent};--accent-bright:${accent}cc;--accent-glow:${accent}26;--border-acc:${accent}4d;--btn-contrast:${contrastColor(accent)}}${customCss ? customCss : ""}</style></head><body>${body}</body></html>`;
 }
+function getGlobalAccent() {
+    return db_1.db.prepare("SELECT value FROM settings WHERE key = 'global_accent_color'").get()?.value ?? "#d4a574";
+}
 function tokenGatePage(error) {
+    const accent = getGlobalAccent();
     return page("Access", `
     <div class="card">
       <h1>⬡ Hydra Self-Hosted</h1>
@@ -334,9 +338,10 @@ function tokenGatePage(error) {
         <button type="submit">Continue</button>
       </form>
     </div>
-  `);
+  `, accent);
 }
 function loginPage(error, launcher = false) {
+    const accent = getGlobalAccent();
     return page("Sign in", `
     <div class="card">
       <h1>⬡ Hydra Self-Hosted</h1>
@@ -353,7 +358,7 @@ function loginPage(error, launcher = false) {
       </form>
       <p class="meta">Hydra Launcher self-hosted instance</p>
     </div>
-  `);
+  `, accent);
 }
 function tabsHtml(hydraGames, steamGames, hasSteam, showRecent = true, sectionsOrder = ["games", "recent"]) {
     const PIN_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:middle;margin-right:4px;opacity:0.7"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>`;
@@ -445,7 +450,8 @@ function dashboardTabsHtml(hydraGames, steamGames, hasSteam) {
   `;
 }
 function dashboardPage(user, games, msg, msgType = "ok") {
-    const accent = user.accent_color || "#d4a574";
+    const globalAccent = getGlobalAccent();
+    const accent = user.accent_color || globalAccent;
     const totalHours = Math.floor(games.reduce((s, g) => s + g.play_time_in_seconds, 0) / 3600);
     const hydraGames = [...games].filter(g => g.source !== "steam_sync")
         .sort((a, b) => (b.is_pinned ?? 0) - (a.is_pinned ?? 0) || b.play_time_in_seconds - a.play_time_in_seconds);
@@ -637,7 +643,7 @@ function fmtDuration(seconds) {
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 function publicProfilePage(user, games, currentGame) {
-    const accent = user.accent_color || "#d4a574";
+    const accent = user.accent_color || getGlobalAccent();
     const totalHours = Math.floor(games.reduce((s, g) => s + g.play_time_in_seconds, 0) / 3600);
     const hydraGames = [...games].filter(g => g.source !== "steam_sync")
         .sort((a, b) => (b.is_pinned ?? 0) - (a.is_pinned ?? 0) || b.play_time_in_seconds - a.play_time_in_seconds);
@@ -1054,7 +1060,7 @@ async function webRoutes(app) {
         return user;
     }
     function adminPage(adminUser, msg, msgType = "ok") {
-        const accent = adminUser.accent_color || "#d4a574";
+        const accent = adminUser.accent_color || getGlobalAccent();
         const users = db_1.db.prepare(`
       SELECT u.id, u.username, u.display_name, u.roles, u.is_banned, u.created_at,
         (SELECT COUNT(*) FROM games WHERE user_id = u.id AND is_deleted = 0) as game_count,
