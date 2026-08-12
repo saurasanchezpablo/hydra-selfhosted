@@ -583,15 +583,7 @@ function dashboardPage(user, games, msg, msgType = "ok") {
         <button type="button" onclick="registerPasskey()" style="width:auto;padding:8px 16px;font-size:12px">Register passkey</button>
       </div>
 
-      ${isAdmin ? `
-      <h3>Global settings</h3>
-      <p style="font-size:12px;color:var(--text-1);margin-bottom:8px">Set the default accent color for all users. Users can override it individually.</p>
-      <form method="POST" action="/web/global-accent">
-        <div class="field"><label>Global accent color</label><div style="display:flex;gap:8px;align-items:center"><input type="color" id="global_accent_picker" name="color" value="${h(accent)}" style="width:40px;height:32px;padding:2px;cursor:pointer;border-radius:0" oninput="document.getElementById('global_accent_hex').value=this.value"><input id="global_accent_hex" value="${h(accent)}" maxlength="7" style="flex:1" placeholder="#d4a574" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value))document.getElementById('global_accent_picker').value=this.value"></div></div>
-        <button type="submit">Save global color</button>
-      </form>
-      <p style="font-size:11px;color:var(--text-2);margin-top:4px">To become admin, open console and call <code style="font-size:11px">POST /profile/make-admin</code> with your auth token (one-time setup).</p>
-      ` : ""}
+      ${isAdmin ? "" : ""}
 
       <h3>API access</h3>
       <p style="font-size:12px;color:var(--text-1);margin-bottom:8px">Use this URL in Hydra Launcher settings:</p>
@@ -600,6 +592,7 @@ function dashboardPage(user, games, msg, msgType = "ok") {
       <div style="margin-top:24px">
         <a href="/u/${h(user.username)}" target="_blank" class="btn btn-ghost" style="display:inline-block;padding:8px 14px;font-size:12px">View public profile ↗</a>
         &nbsp;
+        ${isAdmin ? `<a href="/web/admin" class="btn btn-ghost" style="display:inline-block;padding:8px 14px;font-size:12px">Admin panel ↗</a> &nbsp;` : ""}
         <a href="/web/logout" style="font-size:12px;color:var(--text-1)">Sign out</a>
       </div>
       </div>
@@ -1043,5 +1036,220 @@ async function webRoutes(app) {
         catch {
             return reply.code(500).send({ error: "passkey service unavailable" });
         }
+    });
+    // ─── ADMIN ────────────────────────────────────────────────────────────
+    function checkAdmin(req) {
+        const user = getUserFromCookie(req);
+        if (!user)
+            return null;
+        try {
+            const roles = JSON.parse(user.roles || "[]");
+            if (!Array.isArray(roles) || !roles.includes("admin"))
+                return null;
+        }
+        catch {
+            return null;
+        }
+        return user;
+    }
+    function adminPage(adminUser, msg, msgType = "ok") {
+        const accent = adminUser.accent_color || "#d4a574";
+        const users = db_1.db.prepare(`
+      SELECT u.id, u.username, u.display_name, u.roles, u.is_banned, u.created_at,
+        (SELECT COUNT(*) FROM games WHERE user_id = u.id AND is_deleted = 0) as game_count,
+        (SELECT SUM(play_time_in_seconds) FROM games WHERE user_id = u.id AND is_deleted = 0) as total_play
+      FROM users u ORDER BY u.created_at DESC
+    `).all();
+        const totalGames = db_1.db.prepare("SELECT COUNT(*) as c FROM games WHERE is_deleted = 0").get().c;
+        const totalPlaytime = db_1.db.prepare("SELECT SUM(play_time_in_seconds) as s FROM games WHERE is_deleted = 0").get().s ?? 0;
+        const totalAchievements = db_1.db.prepare("SELECT COUNT(*) as c FROM achievements").get().c;
+        const globalAccent = db_1.db.prepare("SELECT value FROM settings WHERE key = 'global_accent_color'").get()?.value ?? "#d4a574";
+        const fmtH = (s) => { const h = Math.floor((s ?? 0) / 3600); return h >= 1000 ? h.toLocaleString() + "h" : h + "h"; };
+        return page("Admin", `
+      <div class="card wide" style="padding:0;overflow:hidden">
+        <div style="padding:24px 32px 32px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px">
+            <div>
+              <h1>Admin Panel</h1>
+              <h2>Manage users, settings, and server</h2>
+            </div>
+            <a href="/web/dashboard" style="font-size:12px;color:var(--text-1)">← Back to dashboard</a>
+          </div>
+
+          ${msg ? `<div class="${msgType}">${h(msg)}</div>` : ""}
+
+          <h3>Server stats</h3>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">
+            <div style="background:var(--bg-2);padding:12px;text-align:center">
+              <div style="font-size:20px;font-weight:600;color:var(--accent)">${users.length}</div>
+              <div style="font-size:11px;color:var(--text-2);text-transform:uppercase;letter-spacing:0.05em">Users</div>
+            </div>
+            <div style="background:var(--bg-2);padding:12px;text-align:center">
+              <div style="font-size:20px;font-weight:600;color:var(--accent)">${totalGames}</div>
+              <div style="font-size:11px;color:var(--text-2);text-transform:uppercase;letter-spacing:0.05em">Games</div>
+            </div>
+            <div style="background:var(--bg-2);padding:12px;text-align:center">
+              <div style="font-size:20px;font-weight:600;color:var(--accent)">${fmtH(totalPlaytime)}</div>
+              <div style="font-size:11px;color:var(--text-2);text-transform:uppercase;letter-spacing:0.05em">Total playtime</div>
+            </div>
+            <div style="background:var(--bg-2);padding:12px;text-align:center">
+              <div style="font-size:20px;font-weight:600;color:var(--accent)">${totalAchievements}</div>
+              <div style="font-size:11px;color:var(--text-2);text-transform:uppercase;letter-spacing:0.05em">Achievements</div>
+            </div>
+          </div>
+
+          <h3>Global accent color</h3>
+          <form method="POST" action="/web/admin/global-accent" style="margin-bottom:24px">
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="color" name="color" value="${h(globalAccent)}" style="width:40px;height:32px;padding:2px;cursor:pointer;border-radius:0">
+              <input name="color_hex" value="${h(globalAccent)}" maxlength="7" style="flex:1" placeholder="#d4a574">
+              <button type="submit" style="width:auto;padding:8px 16px">Save</button>
+            </div>
+          </form>
+
+          <h3>Users (${users.length})</h3>
+          <div style="overflow-x:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Games</th>
+                  <th>Playtime</th>
+                  <th>Roles</th>
+                  <th>Status</th>
+                  <th>Joined</th>
+                  <th style="text-align:right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${users.map(u => {
+            const roles = (() => { try {
+                return JSON.parse(u.roles || "[]");
+            }
+            catch {
+                return [];
+            } })();
+            const isAdminUser = Array.isArray(roles) && roles.includes("admin");
+            const joined = new Date(u.created_at * 1000).toLocaleDateString();
+            return `<tr style="opacity:${u.is_banned ? '0.4' : '1'}">
+                    <td>
+                      <div style="font-weight:500">${h(u.display_name || u.username)}</div>
+                      <div style="font-size:11px;color:var(--text-2)">@${h(u.username)}</div>
+                    </td>
+                    <td>${u.game_count ?? 0}</td>
+                    <td>${fmtH(u.total_play)}</td>
+                    <td>${isAdminUser ? '<span class="tag">admin</span>' : '<span style="color:var(--text-2);font-size:12px">—</span>'}</td>
+                    <td>${u.is_banned ? '<span style="color:var(--err);font-size:12px">banned</span>' : '<span style="color:var(--ok);font-size:12px">active</span>'}</td>
+                    <td style="font-size:12px;color:var(--text-2)">${joined}</td>
+                    <td style="text-align:right;white-space:nowrap">
+                      ${u.id !== adminUser.id ? `
+                        <form method="POST" action="/web/admin/user/role" style="display:inline;margin:0">
+                          <input type="hidden" name="user_id" value="${u.id}">
+                          <input type="hidden" name="action" value="${isAdminUser ? 'remove-admin' : 'make-admin'}">
+                          <button type="submit" style="background:none;border:1px solid var(--border-1);border-radius:0;cursor:pointer;padding:2px 8px;font-size:11px;color:${isAdminUser ? 'var(--err)' : 'var(--accent)'};font-family:var(--font-mono);font-weight:500;width:auto">${isAdminUser ? 'Demote' : 'Admin'}</button>
+                        </form>
+                        <form method="POST" action="/web/admin/user/ban" style="display:inline;margin:0">
+                          <input type="hidden" name="user_id" value="${u.id}">
+                          <input type="hidden" name="action" value="${u.is_banned ? 'unban' : 'ban'}">
+                          <button type="submit" style="background:none;border:1px solid var(--border-1);border-radius:0;cursor:pointer;padding:2px 8px;font-size:11px;color:${u.is_banned ? 'var(--ok)' : 'var(--err)'};font-family:var(--font-mono);font-weight:500;width:auto">${u.is_banned ? 'Unban' : 'Ban'}</button>
+                        </form>
+                        <form method="POST" action="/web/admin/user/delete" style="display:inline;margin:0" onsubmit="return confirm('Delete user ${h(u.username)}? All data will be lost.')">
+                          <input type="hidden" name="user_id" value="${u.id}">
+                          <button type="submit" style="background:none;border:1px solid var(--border-1);border-radius:0;cursor:pointer;padding:2px 8px;font-size:11px;color:var(--err);font-family:var(--font-mono);font-weight:500;width:auto">Delete</button>
+                        </form>
+                      ` : '<span style="font-size:11px;color:var(--text-2)">you</span>'}
+                    </td>
+                  </tr>`;
+        }).join("")}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `, accent);
+    }
+    app.get("/web/admin", async (req, reply) => {
+        const admin = checkAdmin(req);
+        if (!admin)
+            return reply.redirect("/web/dashboard");
+        return reply.type("text/html").send(adminPage(admin));
+    });
+    app.post("/web/admin/global-accent", { config: { rawBody: true } }, async (req, reply) => {
+        const admin = checkAdmin(req);
+        if (!admin)
+            return reply.redirect("/web/dashboard");
+        const color = req.body?.color || req.body?.color_hex;
+        if (color && /^#[0-9a-fA-F]{6}$/.test(color)) {
+            db_1.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('global_accent_color', ?)").run(color);
+        }
+        return reply.type("text/html").send(adminPage(admin, "Global accent color updated.", "ok"));
+    });
+    app.post("/web/admin/user/role", { config: { rawBody: true } }, async (req, reply) => {
+        const admin = checkAdmin(req);
+        if (!admin)
+            return reply.redirect("/web/dashboard");
+        const { user_id, action } = req.body ?? {};
+        if (!user_id)
+            return reply.type("text/html").send(adminPage(admin, "Missing user_id.", "err"));
+        const user = db_1.db.prepare("SELECT id, roles FROM users WHERE id = ?").get(user_id);
+        if (!user)
+            return reply.type("text/html").send(adminPage(admin, "User not found.", "err"));
+        let roles = [];
+        try {
+            roles = JSON.parse(user.roles || "[]");
+        }
+        catch { }
+        if (action === "make-admin") {
+            if (!roles.includes("admin"))
+                roles.push("admin");
+        }
+        else if (action === "remove-admin") {
+            roles = roles.filter(r => r !== "admin");
+        }
+        db_1.db.prepare("UPDATE users SET roles = ? WHERE id = ?").run(JSON.stringify(roles), user_id);
+        return reply.type("text/html").send(adminPage(admin, `Role updated for user.`, "ok"));
+    });
+    app.post("/web/admin/user/ban", { config: { rawBody: true } }, async (req, reply) => {
+        const admin = checkAdmin(req);
+        if (!admin)
+            return reply.redirect("/web/dashboard");
+        const { user_id, action } = req.body ?? {};
+        if (!user_id)
+            return reply.type("text/html").send(adminPage(admin, "Missing user_id.", "err"));
+        if (user_id === admin.id)
+            return reply.type("text/html").send(adminPage(admin, "Cannot ban yourself.", "err"));
+        const banned = action === "ban" ? 1 : 0;
+        db_1.db.prepare("UPDATE users SET is_banned = ? WHERE id = ?").run(banned, user_id);
+        return reply.type("text/html").send(adminPage(admin, banned ? "User banned." : "User unbanned.", "ok"));
+    });
+    app.post("/web/admin/user/delete", { config: { rawBody: true } }, async (req, reply) => {
+        const admin = checkAdmin(req);
+        if (!admin)
+            return reply.redirect("/web/dashboard");
+        const { user_id } = req.body ?? {};
+        if (!user_id)
+            return reply.type("text/html").send(adminPage(admin, "Missing user_id.", "err"));
+        if (user_id === admin.id)
+            return reply.type("text/html").send(adminPage(admin, "Cannot delete yourself.", "err"));
+        const user = db_1.db.prepare("SELECT id FROM users WHERE id = ?").get(user_id);
+        if (!user)
+            return reply.type("text/html").send(adminPage(admin, "User not found.", "err"));
+        // Delete all user data
+        db_1.db.prepare("DELETE FROM games WHERE user_id = ?").run(user_id);
+        db_1.db.prepare("DELETE FROM achievements WHERE user_id = ?").run(user_id);
+        db_1.db.prepare("DELETE FROM artifacts WHERE user_id = ?").run(user_id);
+        db_1.db.prepare("DELETE FROM blocks WHERE user_id = ?").run(user_id);
+        db_1.db.prepare("DELETE FROM badges WHERE user_id = ?").run(user_id);
+        db_1.db.prepare("DELETE FROM notifications WHERE user_id = ?").run(user_id);
+        db_1.db.prepare("DELETE FROM friendships WHERE requester_id = ? OR addressee_id = ?").run(user_id, user_id);
+        db_1.db.prepare("DELETE FROM passkeys WHERE user_id = ?").run(user_id);
+        db_1.db.prepare("DELETE FROM reviews WHERE user_id = ?").run(user_id);
+        db_1.db.prepare("DELETE FROM review_answers WHERE user_id = ?").run(user_id);
+        db_1.db.prepare("DELETE FROM review_votes WHERE user_id = ?").run(user_id);
+        db_1.db.prepare("DELETE FROM cs_snapshots WHERE user_id = ?").run(user_id);
+        db_1.db.prepare("DELETE FROM cs_pending WHERE user_id = ?").run(user_id);
+        db_1.db.prepare("DELETE FROM collections WHERE user_id = ?").run(user_id);
+        db_1.db.prepare("DELETE FROM users WHERE id = ?").run(user_id);
+        return reply.type("text/html").send(adminPage(admin, "User deleted.", "ok"));
     });
 }
