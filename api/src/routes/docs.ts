@@ -6,13 +6,13 @@ const DOCS_CSS = `
   :root {
     --bg-0: #0f0f0f;
     --bg-1: #1a1a1a;
-    --bg-2: #222222;
+    --bg-2: #222;
     --bg-3: #2a2a2a;
-    --text-0: #dddddd;
-    --text-1: #999999;
-    --text-2: #666669;
+    --text-0: #ddd;
+    --text-1: #999;
+    --text-2: #666;
     --border-1: #2a2a2a;
-    --border-2: #333333;
+    --border-2: #333;
     --accent: #d4a574;
     --accent-bright: #e6bb93;
     --accent-glow: rgba(212,165,116,0.15);
@@ -21,9 +21,9 @@ const DOCS_CSS = `
     --err: #d77;
     --warn: #e6a23c;
     --font-sans: system-ui, -apple-system, sans-serif;
-    --font-mono: ui-monospace, "JetBrains Mono", "Cascadia Code", "Fira Code", monospace;
+    --font-mono: ui-monospace, "JetBrains Mono", "Cascadia Code", monospace;
   }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; scrollbar-width: thin; scrollbar-color: var(--border-2) var(--bg-0); }
   body {
     background: var(--bg-0);
     color: var(--text-0);
@@ -32,48 +32,47 @@ const DOCS_CSS = `
     line-height: 1.6;
     min-height: 100vh;
   }
-  .container { max-width: 900px; margin: 0 auto; padding: 40px 24px 80px; }
-  h1 { font-size: 1.4rem; font-weight: 600; color: var(--text-0); margin-bottom: 8px; letter-spacing: -0.3px; }
-  h2 { font-size: 1rem; font-weight: 600; color: var(--accent); margin: 40px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border-1); }
-  h3 { font-size: 13px; font-weight: 600; color: var(--text-0); margin: 24px 0 8px; }
-  p { color: var(--text-1); font-size: 13px; margin-bottom: 12px; }
+  .container { max-width: 900px; margin: 0 auto; padding: 24px 16px 60px; }
+  h1 { font-size: 1.2rem; font-weight: 600; color: var(--text-0); margin-bottom: 6px; letter-spacing: -0.3px; }
+  h2 { font-size: 0.9rem; font-weight: 600; color: var(--accent); margin: 32px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border-1); }
+  h3 { font-size: 0.8rem; font-weight: 600; color: var(--text-0); margin: 20px 0 6px; }
+  p { color: var(--text-1); font-size: 0.8rem; margin-bottom: 10px; }
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
   code {
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: 0.75rem;
     background: var(--bg-2);
-    border: 1px solid var(--border-1);
-    padding: 2px 6px;
+    border: 1px solid var(--border-2);
+    padding: 2px 5px;
     color: var(--accent);
   }
   pre {
     background: var(--bg-1);
     border: 1px solid var(--border-1);
-    padding: 16px;
+    padding: 12px;
     overflow-x: auto;
-    margin: 12px 0;
-    font-size: 12px;
+    margin: 10px 0;
+    font-size: 0.75rem;
     line-height: 1.5;
   }
   pre code { background: none; border: none; padding: 0; color: var(--text-0); }
   .endpoint {
     background: var(--bg-1);
     border: 1px solid var(--border-1);
-    padding: 16px 20px;
-    margin: 12px 0;
-    transition: border-color 0.15s;
+    padding: 12px 16px;
+    margin: 10px 0;
   }
   .endpoint:hover { border-color: var(--border-2); }
-  .endpoint-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .endpoint-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
   .method {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: 0.65rem;
     font-weight: 600;
-    padding: 3px 8px;
+    padding: 2px 6px;
     text-transform: uppercase;
     display: inline-block;
-    min-width: 50px;
+    min-width: 44px;
     text-align: center;
   }
   .method-get { background: rgba(119,170,153,0.12); color: var(--ok); border: 1px solid rgba(119,170,153,0.25); }
@@ -81,51 +80,51 @@ const DOCS_CSS = `
   .method-put { background: rgba(119,153,184,0.12); color: #7a9db8; border: 1px solid rgba(119,153,184,0.25); }
   .method-patch { background: rgba(138,122,212,0.12); color: #8a7ad4; border: 1px solid rgba(138,122,212,0.25); }
   .method-delete { background: rgba(221,119,119,0.12); color: var(--err); border: 1px solid rgba(221,119,119,0.25); }
-  .path { font-family: var(--font-mono); font-size: 13px; color: var(--text-0); }
+  .path { font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-0); }
   .auth-badge {
     font-family: var(--font-mono);
-    font-size: 10px;
-    padding: 2px 6px;
+    font-size: 0.6rem;
+    padding: 2px 5px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
   .auth-public { background: rgba(119,170,153,0.1); color: var(--ok); border: 1px solid rgba(119,170,153,0.2); }
   .auth-required { background: rgba(212,165,116,0.1); color: var(--accent); border: 1px solid var(--border-acc); }
   .auth-admin { background: rgba(138,122,212,0.1); color: #8a7ad4; border: 1px solid rgba(138,122,212,0.25); }
-  .desc { color: var(--text-1); font-size: 13px; margin-top: 6px; }
-  .params { margin-top: 10px; }
+  .desc { color: var(--text-1); font-size: 0.8rem; margin-top: 6px; }
+  .params { margin-top: 8px; }
   .params dt {
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: 0.75rem;
     color: var(--accent);
-    margin-top: 6px;
+    margin-top: 4px;
   }
-  .params dd { color: var(--text-1); font-size: 12px; margin-left: 16px; }
+  .params dd { color: var(--text-1); font-size: 0.75rem; margin-left: 14px; }
   .tag {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: 0.65rem;
     background: var(--accent-glow);
     border: 1px solid var(--border-acc);
-    padding: 2px 8px;
+    padding: 2px 6px;
     color: var(--accent);
     display: inline-block;
-    margin-right: 6px;
+    margin-right: 4px;
   }
-  hr { border: none; border-top: 1px solid var(--border-1); margin: 32px 0; }
-  .nav { margin-bottom: 32px; display: flex; flex-wrap: wrap; gap: 4px 16px; }
-  .nav a { font-size: 13px; color: var(--text-1); }
+  hr { border: none; border-top: 1px solid var(--border-1); margin: 24px 0; }
+  .nav { margin-bottom: 24px; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  .nav a { font-size: 0.8rem; color: var(--text-1); }
   .nav a:hover { color: var(--accent); }
-  .section { scroll-margin-top: 24px; }
-  .hero { margin-bottom: 32px; }
+  .section { scroll-margin-top: 16px; }
+  .hero { margin-bottom: 24px; }
   .hero h1 { margin-bottom: 4px; }
-  .hero p { color: var(--text-2); font-size: 13px; }
-  .response-label { font-family: var(--font-mono); font-size: 11px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 12px; margin-bottom: 4px; }
+  .hero p { color: var(--text-2); font-size: 0.8rem; }
+  .response-label { font-family: var(--font-mono); font-size: 0.65rem; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 10px; margin-bottom: 3px; }
   .auth-notice {
-    background: var(--bg-2);
-    border: 1px solid var(--border-1);
-    padding: 16px 20px;
-    margin-bottom: 24px;
-    font-size: 13px;
+    background: var(--accent-glow);
+    border: 1px solid var(--border-acc);
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    font-size: 0.8rem;
     color: var(--text-1);
   }
   .auth-notice strong { color: var(--accent); }
@@ -435,11 +434,18 @@ function fullDocs() {
   </section>`;
 }
 
-function docsPage(isAuthenticated: boolean) {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>API Documentation — Hydra Self-Hosted</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet"><style>${DOCS_CSS}</style></head><body>
+function docsPage(isAuthenticated: boolean, accent: string = "#d4a574") {
+  const accentBright = accent + "cc";
+  const accentGlow = accent + "26";
+  const borderAcc = accent + "4d";
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>API Documentation — Hydra Self-Hosted</title><style>${DOCS_CSS.replace("--accent: #d4a574", `--accent: ${accent}`).replace("--accent-bright: #e6bb93", `--accent-bright: ${accentBright}`).replace("--accent-glow: rgba(212,165,116,0.15)", `--accent-glow: ${accentGlow}`).replace("--border-acc: rgba(212,165,116,0.3)", `--border-acc: ${borderAcc}`)}</style></head><body>
+  <nav class="nav">
+    <a href="/" style="font-size:0.85rem;font-weight:600;color:var(--accent);text-decoration:none">Hydra</a>
+    <a href="/docs">Docs</a>
+  </nav>
 <div class="container">
   <div class="hero">
-    <h1>⬡ Hydra Self-Hosted API</h1>
+    <h1>Hydra Self-Hosted API</h1>
     <p>REST API for managing profiles, game libraries, cloud saves, and more.</p>
   </div>
   ${isAuthenticated ? fullDocs() : publicDocsOnly()}
@@ -449,8 +455,13 @@ function docsPage(isAuthenticated: boolean) {
 </body></html>`;
 }
 
+function getGlobalAccent(): string {
+  return (db.prepare("SELECT value FROM settings WHERE key = 'global_accent_color'").get() as { value: string } | undefined)?.value ?? "#d4a574";
+}
+
 export async function docsRoutes(app: FastifyInstance) {
   app.get("/docs", async (req: FastifyRequest<{ Querystring: { all?: string } }>, reply: FastifyReply) => {
+    const accent = getGlobalAccent();
     // Check if user wants full docs via query param
     if (req.query.all === "1") {
       // Check cookie auth
@@ -458,7 +469,7 @@ export async function docsRoutes(app: FastifyInstance) {
       if (token) {
         try {
           verifyToken(token, "access");
-          return reply.type("text/html").send(docsPage(true));
+          return reply.type("text/html").send(docsPage(true, accent));
         } catch {}
       }
       // Not authenticated — redirect to dashboard to login
@@ -475,6 +486,6 @@ export async function docsRoutes(app: FastifyInstance) {
       } catch {}
     }
 
-    return reply.type("text/html").send(docsPage(isAuthenticated));
+    return reply.type("text/html").send(docsPage(isAuthenticated, accent));
   });
 }
