@@ -814,7 +814,15 @@ function passkeyLoginPage(launcher = false) {
           const { accessToken } = await verifyRes.json();
           status.textContent = "Authenticated! Redirecting to Hydra...";
           ${launcher
-        ? `window.location.href = LAUNCHER_PROTOCOL + "token/" + accessToken;`
+        ? `const deepLink = LAUNCHER_PROTOCOL + "token/" + accessToken;
+            window.location.href = deepLink;
+            setTimeout(() => {
+              const a = document.createElement("a");
+              a.href = deepLink;
+              a.textContent = "Click here if Hydra did not open";
+              status.appendChild(document.createElement("br"));
+              status.appendChild(a);
+            }, 2000);`
         : `await fetch("/web/auto-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userToken: accessToken }) });
             window.location.href = "/web/dashboard";`}
         } catch (e) {
