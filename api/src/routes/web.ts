@@ -857,6 +857,7 @@ function passkeyLoginPage(launcher = false) {
           errorEl.style.display = "block";
         }
       }
+      startPasskeyLogin();
     </script>
   `, accent);
 }
