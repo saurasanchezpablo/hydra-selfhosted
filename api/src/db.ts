@@ -16,32 +16,6 @@ export const db = new Database(path.join(DATA_DIR, "hydra.db"));
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 
-// Migrations for existing databases
-for (const col of ["steam_id", "steam_api_key", "accent_color", "custom_css"]) {
-  try { db.exec(`ALTER TABLE users ADD COLUMN ${col} TEXT`); } catch {}
-}
-try { db.exec(`ALTER TABLE games ADD COLUMN executable_path TEXT`); } catch {}
-try { db.exec(`ALTER TABLE games ADD COLUMN pinned_at INTEGER`); } catch {}
-try { db.exec(`ALTER TABLE games ADD COLUMN source TEXT NOT NULL DEFAULT 'launcher'`); } catch {}
-try {
-  db.exec(`CREATE TABLE IF NOT EXISTS collections (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES users(id),
-    name TEXT NOT NULL,
-    position INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    UNIQUE(user_id, name)
-  )`);
-} catch {}
-try { db.exec(`ALTER TABLE users ADD COLUMN show_recent_activity INTEGER NOT NULL DEFAULT 1`); } catch {}
-try { db.exec(`ALTER TABLE users ADD COLUMN show_library INTEGER NOT NULL DEFAULT 1`); } catch {}
-try { db.exec(`ALTER TABLE users ADD COLUMN profile_sections_order TEXT`); } catch {}
-try { db.exec(`ALTER TABLE games ADD COLUMN session_started_at INTEGER`); } catch {}
-
-// Fix image URLs stored as absolute paths
-try { db.exec(`UPDATE users SET profile_image_url = REPLACE(profile_image_url, '/data/images/', '/images/') WHERE profile_image_url LIKE '/data/%'`); } catch {}
-try { db.exec(`UPDATE users SET background_image_url = REPLACE(background_image_url, '/data/images/', '/images/') WHERE background_image_url LIKE '/data/%'`); } catch {}
-
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -136,6 +110,32 @@ db.exec(`
   );
 `);
 
+// Migrations for existing databases
+for (const col of ["steam_id", "steam_api_key", "accent_color", "custom_css"]) {
+  try { db.exec(`ALTER TABLE users ADD COLUMN ${col} TEXT`); } catch {}
+}
+try { db.exec(`ALTER TABLE games ADD COLUMN executable_path TEXT`); } catch {}
+try { db.exec(`ALTER TABLE games ADD COLUMN pinned_at INTEGER`); } catch {}
+try { db.exec(`ALTER TABLE games ADD COLUMN source TEXT NOT NULL DEFAULT 'launcher'`); } catch {}
+try {
+  db.exec(`CREATE TABLE IF NOT EXISTS collections (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    name TEXT NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    UNIQUE(user_id, name)
+  )`);
+} catch {}
+try { db.exec(`ALTER TABLE users ADD COLUMN show_recent_activity INTEGER NOT NULL DEFAULT 1`); } catch {}
+try { db.exec(`ALTER TABLE users ADD COLUMN show_library INTEGER NOT NULL DEFAULT 1`); } catch {}
+try { db.exec(`ALTER TABLE users ADD COLUMN profile_sections_order TEXT`); } catch {}
+try { db.exec(`ALTER TABLE games ADD COLUMN session_started_at INTEGER`); } catch {}
+
+// Fix image URLs stored as absolute paths
+try { db.exec(`UPDATE users SET profile_image_url = REPLACE(profile_image_url, '/data/images/', '/images/') WHERE profile_image_url LIKE '/data/%'`); } catch {}
+try { db.exec(`UPDATE users SET background_image_url = REPLACE(background_image_url, '/data/images/', '/images/') WHERE background_image_url LIKE '/data/%'`); } catch {}
+
 try { db.exec(`ALTER TABLE users ADD COLUMN roles TEXT`); } catch {}
 try { db.exec(`ALTER TABLE users ADD COLUMN is_banned INTEGER NOT NULL DEFAULT 0`); } catch {}
 
@@ -204,7 +204,6 @@ try { db.exec(`INSERT OR IGNORE INTO settings (key, value) VALUES ('global_accen
 export function enforceInitialAdmin() {
   const INITIAL_ADMIN = process.env.INITIAL_ADMIN_USERNAME;
   if (!INITIAL_ADMIN) {
-    // Fallback: make the first user admin if no admin exists
     const anyAdmin = db.prepare("SELECT 1 FROM users WHERE roles LIKE '%admin%'").get();
     if (anyAdmin) return;
     const firstUser = db.prepare("SELECT id FROM users ORDER BY created_at ASC LIMIT 1").get() as { id: string } | undefined;
