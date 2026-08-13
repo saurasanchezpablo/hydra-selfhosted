@@ -26,7 +26,7 @@ const app = Fastify({ logger: true, bodyLimit: maxSaveSizeBytes });
 app.register(fastifyCookie);
 app.register(fastifyMultipart, { limits: { fileSize: maxSaveSizeBytes } });
 app.register(fastifyCors, {
-  origin: ["https://your-domain.com", "http://localhost:3000"],
+  origin: process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(",").map(s => s.trim()) : true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 });
