@@ -217,7 +217,7 @@ const CSS = `
   .field { margin-bottom: 10px; }
   button, .btn {
     background: var(--accent);
-    color: var(--bg-0);
+    color: var(--btn-contrast, var(--bg-0));
     border: 1px solid var(--accent);
     border-radius: 0;
     padding: 6px 12px;
@@ -293,7 +293,7 @@ const CSS = `
   .tab-btn.active {
     background: var(--accent);
     border-color: var(--accent);
-    color: var(--bg-0);
+    color: var(--btn-contrast, var(--bg-0));
   }
   .tab-btn:hover { opacity: 0.85; }
   th {
