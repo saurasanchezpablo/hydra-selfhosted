@@ -739,6 +739,73 @@ function getUserFromCookie(req) {
         return null;
     }
 }
+function passkeyLoginPage() {
+    const accent = getGlobalAccent();
+    return page("Sign in with Passkey", `
+    <div class="wrap" style="display:flex;align-items:center;justify-content:center;min-height:100vh">
+      <div class="card" style="text-align:center">
+        <h1>Hydra Self-Hosted</h1>
+        <h2>Sign in with passkey</h2>
+        <div id="status" style="font-size:0.8rem;color:var(--text-1);margin:16px 0">Click the button below to authenticate with your passkey.</div>
+        <button id="passkey-btn" onclick="startPasskeyLogin()">Sign in with Passkey</button>
+        <div id="error" class="err" style="display:none;margin-top:12px"></div>
+        <p class="meta" style="margin-top:16px">After authentication you will be redirected back to Hydra.</p>
+      </div>
+    </div>
+    <script>
+      const LAUNCHER_PROTOCOL = "hydra-self-hosted://";
+      async function startPasskeyLogin() {
+        const btn = document.getElementById("passkey-btn");
+        const status = document.getElementById("status");
+        const errorEl = document.getElementById("error");
+        btn.disabled = true;
+        btn.textContent = "Authenticating...";
+        status.textContent = "Requesting passkey challenge...";
+        errorEl.style.display = "none";
+        try {
+          const optsRes = await fetch("/passkeys/login/options", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          });
+          if (!optsRes.ok) throw new Error("Failed to get login options");
+          const options = await optsRes.json();
+          status.textContent = "Waiting for passkey...";
+          const cred = await navigator.credentials.get({ publicKey: options });
+          status.textContent = "Verifying...";
+          const verifyRes = await fetch("/passkeys/login/verify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: cred.id,
+              rawId: btoa(String.fromCharCode.apply(null, new Uint8Array(cred.rawId))),
+              type: cred.type,
+              response: {
+                authenticatorData: btoa(String.fromCharCode.apply(null, new Uint8Array(cred.response.authenticatorData))),
+                clientDataJSON: btoa(String.fromCharCode.apply(null, new Uint8Array(cred.response.clientDataJSON))),
+                signature: btoa(String.fromCharCode.apply(null, new Uint8Array(cred.response.signature))),
+                userHandle: cred.response.userHandle ? btoa(String.fromCharCode.apply(null, new Uint8Array(cred.response.userHandle))) : null,
+              },
+            }),
+          });
+          if (!verifyRes.ok) {
+            const err = await verifyRes.json().catch(() => ({}));
+            throw new Error(err.error || "Verification failed");
+          }
+          const { accessToken } = await verifyRes.json();
+          status.textContent = "Authenticated! Redirecting to Hydra...";
+          window.location.href = LAUNCHER_PROTOCOL + "token/" + accessToken;
+        } catch (e) {
+          status.textContent = "";
+          btn.disabled = false;
+          btn.textContent = "Sign in with Passkey";
+          errorEl.textContent = e.message || "Passkey authentication failed";
+          errorEl.style.display = "block";
+        }
+      }
+    </script>
+  `, accent);
+}
 async function webRoutes(app) {
     app.get("/", async (req, reply) => {
         const user = getUserFromCookie(req);
@@ -749,6 +816,9 @@ async function webRoutes(app) {
             return reply.type("text/html").send(tokenGatePage());
         const launcher = req.query.launcher === "1";
         return reply.type("text/html").send(loginPage(undefined, launcher));
+    });
+    app.get("/web/passkey-login", async (req, reply) => {
+        return reply.type("text/html").send(passkeyLoginPage());
     });
     app.post("/web/launcher-gate", {
         config: { rawBody: true },
