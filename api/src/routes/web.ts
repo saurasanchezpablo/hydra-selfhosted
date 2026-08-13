@@ -874,7 +874,7 @@ function getUserFromCookie(req: FastifyRequest): DbUser | null {
   }
 }
 
-function passkeyLoginPage(launcher = false) {
+function passkeyLoginPage(launcher = false, callbackPort?: string) {
   const accent = getGlobalAccent();
   return page("Sign in with Passkey", `
     <div class="wrap" style="display:flex;align-items:center;justify-content:center;min-height:100vh">
@@ -935,8 +935,10 @@ function passkeyLoginPage(launcher = false) {
           }
           const { accessToken } = await verifyRes.json();
           status.textContent = "Authenticated! Redirecting to Hydra...";
-          ${launcher
-            ? `const deepLink = LAUNCHER_PROTOCOL + "token/" + accessToken;
+${launcher
+             ? callbackPort
+               ? `window.location.href = "http://127.0.0.1:${callbackPort}/token/" + encodeURIComponent(accessToken);`
+               : `const deepLink = LAUNCHER_PROTOCOL + "token/" + accessToken;
             window.location.href = deepLink;
             setTimeout(() => {
               const a = document.createElement("a");
@@ -972,7 +974,8 @@ export async function webRoutes(app: FastifyInstance) {
 
   app.get("/web/passkey-login", async (req: FastifyRequest, reply: FastifyReply) => {
     const launcher = (req.query as any).launcher === "1";
-    return reply.type("text/html").send(passkeyLoginPage(launcher));
+    const callbackPort = (req.query as any).callback_port as string | undefined;
+    return reply.type("text/html").send(passkeyLoginPage(launcher, callbackPort));
   });
 
   app.post("/web/launcher-gate", {
