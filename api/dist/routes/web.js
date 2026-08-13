@@ -366,6 +366,9 @@ function tokenGatePage(error) {
           <div class="field"><label>API Token</label><input name="instance_token" type="password" autofocus required></div>
           <button type="submit">Continue</button>
         </form>
+        <div class="row" style="margin-top:12px">
+          <a href="/web/passkey-login" class="btn btn-ghost" style="display:inline-block;padding:8px 16px;font-size:0.8rem">Sign in with Passkey</a>
+        </div>
       </div>
     </div>
   `, accent);
@@ -387,6 +390,9 @@ function loginPage(error, launcher = false) {
             <button type="submit" name="action" value="register" class="btn-ghost">Register</button>
           </div>
         </form>
+        <div class="row" style="margin-top:12px;justify-content:center">
+          <a href="/web/passkey-login${launcher ? "?launcher=1" : ""}" class="btn btn-ghost" style="display:inline-block;padding:8px 16px;font-size:0.8rem">Sign in with Passkey</a>
+        </div>
         <p class="meta">Hydra Launcher self-hosted instance</p>
       </div>
     </div>
@@ -746,7 +752,7 @@ function getUserFromCookie(req) {
         return null;
     }
 }
-function passkeyLoginPage() {
+function passkeyLoginPage(launcher = false) {
     const accent = getGlobalAccent();
     return page("Sign in with Passkey", `
     <div class="wrap" style="display:flex;align-items:center;justify-content:center;min-height:100vh">
@@ -807,7 +813,10 @@ function passkeyLoginPage() {
           }
           const { accessToken } = await verifyRes.json();
           status.textContent = "Authenticated! Redirecting to Hydra...";
-          window.location.href = LAUNCHER_PROTOCOL + "token/" + accessToken;
+          ${launcher
+        ? `window.location.href = LAUNCHER_PROTOCOL + "token/" + accessToken;`
+        : `await fetch("/web/auto-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userToken: accessToken }) });
+            window.location.href = "/web/dashboard";`}
         } catch (e) {
           status.textContent = "";
           btn.disabled = false;
@@ -831,7 +840,8 @@ async function webRoutes(app) {
         return reply.type("text/html").send(loginPage(undefined, launcher));
     });
     app.get("/web/passkey-login", async (req, reply) => {
-        return reply.type("text/html").send(passkeyLoginPage());
+        const launcher = req.query.launcher === "1";
+        return reply.type("text/html").send(passkeyLoginPage(launcher));
     });
     app.post("/web/launcher-gate", {
         config: { rawBody: true },
