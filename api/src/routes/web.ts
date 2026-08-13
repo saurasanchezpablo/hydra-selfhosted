@@ -1133,7 +1133,7 @@ export async function webRoutes(app: FastifyInstance) {
     try {
       const res = await fetch(`${proto}://${host}/passkeys/register/options`, {
         method: "POST",
-        headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+        headers: { "Authorization": `Bearer ${token}` },
       });
       return reply.code(res.status).send(await res.json());
     } catch {
