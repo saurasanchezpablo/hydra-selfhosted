@@ -43,6 +43,10 @@ const node_path_1 = __importDefault(require("node:path"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const db_1 = require("../db");
 const auth_1 = require("../auth");
+const server_1 = require("@simplewebauthn/server");
+const RP_NAME = "Hydra Self-Hosted";
+const RP_ID = process.env.WEBAUTHN_RP_ID ?? "localhost";
+const ORIGIN = process.env.WEBAUTHN_ORIGIN ?? `http://localhost:${process.env.PORT ?? "3000"}`;
 const steam_sync_1 = require("../steam-sync");
 function hashPassword(p) {
     return bcryptjs_1.default.hashSync(p, 10);
@@ -516,7 +520,7 @@ function dashboardPage(user, games, msg, msgType = "ok") {
         "function removeBanner(){fetch('/web/remove-banner',{method:'POST'}).then(()=>location.reload());}",
         "async function loadPasskeys(){try{const r=await fetch('/web/passkeys/list');const pks=await r.json();const el=document.getElementById('passkey-list');if(!pks.length){el.innerHTML='<span style=\"color:var(--text-2);font-size:12px\">No passkeys registered.</span>';return;}el.innerHTML=pks.map(pk=>'<div style=\"display:flex;align-items:center;justify-content:space-between;background:var(--bg-2);padding:8px 12px;margin-bottom:4px\"><span style=\"font-size:12px\">'+(pk.label||'Passkey')+' <span style=\"color:var(--text-2)\">'+new Date(pk.createdAt).toLocaleDateString()+'</span></span><button onclick=\"deletePasskey(\\''+pk.id+'\\')\" style=\"background:none;border:1px solid var(--border-1);border-radius:0;cursor:pointer;padding:2px 8px;font-size:11px;color:var(--err);font-family:var(--font-mono);font-weight:500;width:auto\">Remove</button></div>').join('');}catch(e){document.getElementById('passkey-list').innerHTML='<span style=\"color:var(--text-2);font-size:12px\">Error loading passkeys</span>';}}",
         "async function deletePasskey(id){if(!confirm('Remove this passkey?'))return;await fetch('/web/passkeys/'+id,{method:'DELETE'});loadPasskeys();}",
-        "async function registerPasskey(){try{const optsRes=await fetch('/web/passkeys/register/options',{method:'POST',headers:{'Content-Type':'application/json'}});const opts=await optsRes.json();if(opts.error){alert(opts.error);return;}const cred=await navigator.credentials.create({publicKey:opts});const verifyRes=await fetch('/web/passkeys/register/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:cred.id,rawId:btoa(String.fromCharCode.apply(null,new Uint8Array(cred.rawId))),type:cred.type,response:{attestationObject:btoa(String.fromCharCode.apply(null,new Uint8Array(cred.response.attestationObject))),clientDataJSON:btoa(String.fromCharCode.apply(null,new Uint8Array(cred.response.clientDataJSON)))},label:navigator.userAgent.includes('Mobile')?'Mobile device':'Browser'})});const result=await verifyRes.json();if(result.verified){loadPasskeys();}else{alert('Registration failed');}}catch(e){if(e.name!=='NotAllowedError')alert('Passkey error: '+e.message);}}",
+        "async function registerPasskey(){try{const optsRes=await fetch('/web/passkeys/register/options',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});const opts=await optsRes.json();if(opts.error){alert(opts.error);return;}const cred=await navigator.credentials.create({publicKey:opts});const verifyRes=await fetch('/web/passkeys/register/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:cred.id,rawId:btoa(String.fromCharCode.apply(null,new Uint8Array(cred.rawId))),type:cred.type,response:{attestationObject:btoa(String.fromCharCode.apply(null,new Uint8Array(cred.response.attestationObject))),clientDataJSON:btoa(String.fromCharCode.apply(null,new Uint8Array(cred.response.clientDataJSON)))},label:navigator.userAgent.includes('Mobile')?'Mobile device':'Browser'})});const result=await verifyRes.json();if(result.verified){loadPasskeys();}else{alert('Registration failed');}}catch(e){if(e.name!=='NotAllowedError')alert('Passkey error: '+e.message);}}",
     ].join("\n");
     return page("Dashboard", `
     <nav class="nav"><div class="nav-inner">
@@ -1089,78 +1093,85 @@ async function webRoutes(app) {
         const games = db_1.db.prepare("SELECT * FROM games WHERE user_id = ? AND is_deleted = 0").all(user.id);
         return reply.type("text/html").send(dashboardPage(user, games, "Global accent color updated.", "ok"));
     });
-    // Passkey web routes (use cookie auth for web dashboard)
+    // Passkey web routes (cookie auth — call logic directly, no self-fetch)
     app.post("/web/passkeys/register/options", async (req, reply) => {
         const user = getUserFromCookie(req);
         if (!user)
             return reply.code(401).send({ error: "unauthorized" });
-        const token = req.cookies?.["web_token"];
-        const host = req.headers.host ?? "localhost:3000";
-        const proto = req.headers["x-forwarded-proto"] ?? "http";
         try {
-            const res = await fetch(`${proto}://${host}/passkeys/register/options`, {
-                method: "POST",
-                headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+            const existingPasskeys = db_1.db.prepare("SELECT credential_id FROM passkeys WHERE user_id = ?").all(user.id);
+            const options = await (0, server_1.generateRegistrationOptions)({
+                rpName: RP_NAME,
+                rpID: RP_ID,
+                userName: user.username,
+                attestationType: "none",
+                excludeCredentials: existingPasskeys.map(pk => ({
+                    id: pk.credential_id,
+                    transports: ["internal"],
+                })),
+                authenticatorSelection: {
+                    residentKey: "preferred",
+                    userVerification: "preferred",
+                },
             });
-            return reply.code(res.status).send(await res.json());
+            req.server.passkeyChallenge = options.challenge;
+            req.server.passkeyUserId = user.id;
+            return options;
         }
-        catch {
-            return reply.code(500).send({ error: "passkey service unavailable" });
+        catch (err) {
+            return reply.code(400).send({ error: err.message ?? "failed to generate options" });
         }
     });
     app.post("/web/passkeys/register/verify", async (req, reply) => {
         const user = getUserFromCookie(req);
         if (!user)
             return reply.code(401).send({ error: "unauthorized" });
-        const token = req.cookies?.["web_token"];
-        const host = req.headers.host ?? "localhost:3000";
-        const proto = req.headers["x-forwarded-proto"] ?? "http";
+        const challenge = req.server.passkeyChallenge;
+        if (!challenge)
+            return reply.code(400).send({ error: "no challenge — start registration first" });
+        const body = req.body;
+        const label = body.label;
+        const registrationResponse = body;
         try {
-            const res = await fetch(`${proto}://${host}/passkeys/register/verify`, {
-                method: "POST",
-                headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-                body: JSON.stringify(req.body),
+            const verification = await (0, server_1.verifyRegistrationResponse)({
+                response: registrationResponse,
+                expectedChallenge: challenge,
+                expectedOrigin: ORIGIN,
+                expectedRPID: RP_ID,
             });
-            return reply.code(res.status).send(await res.json());
+            if (!verification.verified || !verification.registrationInfo) {
+                return reply.code(400).send({ error: "verification failed" });
+            }
+            const regInfo = verification.registrationInfo;
+            const id = node_crypto_1.default.randomUUID();
+            db_1.db.prepare("INSERT INTO passkeys (id, user_id, credential_id, public_key, counter, transports, label) VALUES (?, ?, ?, ?, ?, ?, ?)").run(id, user.id, regInfo.credentialID, Buffer.from(regInfo.credentialPublicKey).toString("base64"), regInfo.counter, JSON.stringify(registrationResponse.response?.transports ?? []), label ?? `${regInfo.credentialDeviceType}${regInfo.credentialBackedUp ? " (backed up)" : ""}`);
+            req.server.passkeyChallenge = null;
+            return { verified: true, passkeyId: id };
         }
-        catch {
-            return reply.code(500).send({ error: "passkey service unavailable" });
+        catch (err) {
+            return reply.code(400).send({ error: err.message ?? "verification failed" });
         }
     });
     app.get("/web/passkeys/list", async (req, reply) => {
         const user = getUserFromCookie(req);
         if (!user)
             return reply.code(401).send({ error: "unauthorized" });
-        const token = req.cookies?.["web_token"];
-        const host = req.headers.host ?? "localhost:3000";
-        const proto = req.headers["x-forwarded-proto"] ?? "http";
-        try {
-            const res = await fetch(`${proto}://${host}/passkeys`, {
-                headers: { "Authorization": `Bearer ${token}` },
-            });
-            return reply.code(res.status).send(await res.json());
-        }
-        catch {
-            return reply.code(500).send({ error: "passkey service unavailable" });
-        }
+        const passkeys = db_1.db.prepare("SELECT id, label, created_at FROM passkeys WHERE user_id = ? ORDER BY created_at DESC").all(user.id);
+        return passkeys.map(pk => ({
+            id: pk.id,
+            label: pk.label,
+            createdAt: new Date(pk.created_at * 1000).toISOString(),
+        }));
     });
     app.delete("/web/passkeys/:id", async (req, reply) => {
         const user = getUserFromCookie(req);
         if (!user)
             return reply.code(401).send({ error: "unauthorized" });
-        const token = req.cookies?.["web_token"];
-        const host = req.headers.host ?? "localhost:3000";
-        const proto = req.headers["x-forwarded-proto"] ?? "http";
-        try {
-            const res = await fetch(`${proto}://${host}/passkeys/${req.params.id}`, {
-                method: "DELETE",
-                headers: { "Authorization": `Bearer ${token}` },
-            });
-            return reply.code(res.status).send(await res.json());
-        }
-        catch {
-            return reply.code(500).send({ error: "passkey service unavailable" });
-        }
+        const pk = db_1.db.prepare("SELECT id FROM passkeys WHERE id = ? AND user_id = ?").get(req.params.id, user.id);
+        if (!pk)
+            return reply.code(404).send({ error: "not found" });
+        db_1.db.prepare("DELETE FROM passkeys WHERE id = ?").run(req.params.id);
+        return { ok: true };
     });
     // ─── ADMIN ────────────────────────────────────────────────────────────
     function checkAdmin(req) {
