@@ -547,7 +547,10 @@ function dashboardPage(user: DbUser, games: DbGame[], msg?: string, msgType: "ok
     "function removeBanner(){fetch('/web/remove-banner',{method:'POST'}).then(()=>location.reload());}",
     "async function loadPasskeys(){try{const r=await fetch('/web/passkeys/list');const pks=await r.json();const el=document.getElementById('passkey-list');if(!pks.length){el.innerHTML='<span style=\"color:var(--text-2);font-size:12px\">No passkeys registered.</span>';return;}el.innerHTML=pks.map(pk=>'<div style=\"display:flex;align-items:center;justify-content:space-between;background:var(--bg-2);padding:8px 12px;margin-bottom:4px\"><span style=\"font-size:12px\">'+(pk.label||'Passkey')+' <span style=\"color:var(--text-2)\">'+new Date(pk.createdAt).toLocaleDateString()+'</span></span><button onclick=\"deletePasskey(\\''+pk.id+'\\')\" style=\"background:none;border:1px solid var(--border-1);border-radius:0;cursor:pointer;padding:2px 8px;font-size:11px;color:var(--err);font-family:var(--font-mono);font-weight:500;width:auto\">Remove</button></div>').join('');}catch(e){document.getElementById('passkey-list').innerHTML='<span style=\"color:var(--text-2);font-size:12px\">Error loading passkeys</span>';}}",
     "async function deletePasskey(id){if(!confirm('Remove this passkey?'))return;await fetch('/web/passkeys/'+id,{method:'DELETE'});loadPasskeys();}",
-    "async function registerPasskey(){try{const optsRes=await fetch('/web/passkeys/register/options',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});const opts=await optsRes.json();if(opts.error){alert(opts.error);return;}const cred=await navigator.credentials.create({publicKey:opts});const verifyRes=await fetch('/web/passkeys/register/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:cred.id,rawId:btoa(String.fromCharCode.apply(null,new Uint8Array(cred.rawId))),type:cred.type,response:{attestationObject:btoa(String.fromCharCode.apply(null,new Uint8Array(cred.response.attestationObject))),clientDataJSON:btoa(String.fromCharCode.apply(null,new Uint8Array(cred.response.clientDataJSON)))},label:navigator.userAgent.includes('Mobile')?'Mobile device':'Browser'})});const result=await verifyRes.json();if(result.verified){loadPasskeys();}else{alert('Registration failed');}}catch(e){if(e.name!=='NotAllowedError')alert('Passkey error: '+e.message);}}",
+    "function toB64Url(bytes){let s='';for(const b of bytes)s+=String.fromCharCode(b);return btoa(s).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'');}",
+    "function fromB64Url(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';const bin=atob(s);const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return u;}",
+    "function prepareCreateOptions(o){o.challenge=fromB64Url(o.challenge);o.user.id=fromB64Url(o.user.id);if(o.excludeCredentials)o.excludeCredentials=o.excludeCredentials.map(c=>({...c,id:fromB64Url(c.id)}));return o;}",
+    "async function registerPasskey(){try{const optsRes=await fetch('/web/passkeys/register/options',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});const opts=await optsRes.json();if(opts.error){alert(opts.error);return;}const cred=await navigator.credentials.create({publicKey:prepareCreateOptions(opts)});const credJson={id:cred.id,rawId:toB64Url(new Uint8Array(cred.rawId)),type:cred.type,response:{attestationObject:toB64Url(new Uint8Array(cred.response.attestationObject)),clientDataJSON:toB64Url(new Uint8Array(cred.response.clientDataJSON))},clientExtensionResults:typeof cred.getClientExtensionResults==='function'?cred.getClientExtensionResults():{}};const verifyRes=await fetch('/web/passkeys/register/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...credJson,label:navigator.userAgent.includes('Mobile')?'Mobile device':'Browser'})});const result=await verifyRes.json();if(result.verified){loadPasskeys();}else{alert(result.error||'Registration failed');}}catch(e){if(e.name!=='NotAllowedError')alert('Passkey error: '+e.message);}}",
   ].join("\n");
 
   return page("Dashboard", `
@@ -790,6 +793,8 @@ function passkeyLoginPage() {
     </div>
     <script>
       const LAUNCHER_PROTOCOL = "hydra-self-hosted://";
+      function toB64Url(bytes){let s='';for(const b of bytes)s+=String.fromCharCode(b);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
+      function fromB64Url(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';const bin=atob(s);const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return u;}
       async function startPasskeyLogin() {
         const btn = document.getElementById("passkey-btn");
         const status = document.getElementById("status");
@@ -807,22 +812,26 @@ function passkeyLoginPage() {
           if (!optsRes.ok) throw new Error("Failed to get login options");
           const options = await optsRes.json();
           status.textContent = "Waiting for passkey...";
+          options.challenge = fromB64Url(options.challenge);
+          if (options.allowCredentials) options.allowCredentials = options.allowCredentials.map(c => ({ ...c, id: fromB64Url(c.id) }));
           const cred = await navigator.credentials.get({ publicKey: options });
           status.textContent = "Verifying...";
+          const credJson = {
+            id: cred.id,
+            rawId: toB64Url(new Uint8Array(cred.rawId)),
+            type: cred.type,
+            response: {
+              authenticatorData: toB64Url(new Uint8Array(cred.response.authenticatorData)),
+              clientDataJSON: toB64Url(new Uint8Array(cred.response.clientDataJSON)),
+              signature: toB64Url(new Uint8Array(cred.response.signature)),
+              userHandle: cred.response.userHandle ? toB64Url(new Uint8Array(cred.response.userHandle)) : null,
+            },
+            clientExtensionResults: typeof cred.getClientExtensionResults === 'function' ? cred.getClientExtensionResults() : {},
+          };
           const verifyRes = await fetch("/passkeys/login/verify", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              id: cred.id,
-              rawId: btoa(String.fromCharCode.apply(null, new Uint8Array(cred.rawId))),
-              type: cred.type,
-              response: {
-                authenticatorData: btoa(String.fromCharCode.apply(null, new Uint8Array(cred.response.authenticatorData))),
-                clientDataJSON: btoa(String.fromCharCode.apply(null, new Uint8Array(cred.response.clientDataJSON))),
-                signature: btoa(String.fromCharCode.apply(null, new Uint8Array(cred.response.signature))),
-                userHandle: cred.response.userHandle ? btoa(String.fromCharCode.apply(null, new Uint8Array(cred.response.userHandle))) : null,
-              },
-            }),
+            body: JSON.stringify(credJson),
           });
           if (!verifyRes.ok) {
             const err = await verifyRes.json().catch(() => ({}));
