@@ -805,7 +805,7 @@ function dashboardPage(user: DbUser, games: DbGame[], msg?: string, msgType: "ok
   `, accent, user.custom_css || "");
 }
 
-const DEFAULT_PROFILE_CSS = `*{box-sizing:border-box;margin:0;padding:0}body{background:var(--bg-0,#0f0f0f);color:var(--text-0,#ddd);font-family:system-ui,-apple-system,sans-serif;font-size:14px;min-height:100vh}a{color:inherit;text-decoration:none}.card.wide{max-width:100%;border:none;border-radius:0;border:1px solid var(--border-1,#2a2a2a)}.card.wide>div:first-child{height:220px!important;border-radius:0}.card.wide>div:nth-child(2){max-width:960px;margin:0 auto;padding:0 32px 48px!important}.card.wide>div:nth-child(2)>div:first-child{margin-top:-56px!important;margin-bottom:24px!important;align-items:flex-end}.card.wide>div:nth-child(2)>div:first-child img,.card.wide>div:nth-child(2)>div:first-child>div:first-child{width:96px!important;height:96px!important;border:3px solid #0f0f0f!important;box-shadow:0 4px 24px rgba(0,0,0,.6)}.card.wide h1{font-size:22px;font-weight:600;letter-spacing:-.3px;color:#fff}.card.wide h2{font-size:13px;font-weight:400;color:#999;margin-top:2px}.card.wide>div:nth-child(2)>div:nth-child(2){background:var(--bg-1,#1a1a1a);border:1px solid var(--border-1,#2a2a2a);padding:16px 24px;gap:32px!important;margin:0 0 24px!important;display:inline-flex!important}.card.wide>div:nth-child(2)>div:nth-child(2)>div{text-align:center}.card.wide>div:nth-child(2)>div:nth-child(2) span:first-child{font-size:20px!important;font-weight:700}.tab-btn{background:transparent;border:none;border-bottom:2px solid transparent;color:#999;font-size:13px;font-weight:500;padding:8px 4px;cursor:pointer;transition:color .15s,border-color .15s}.tab-btn.active,.tab-btn:hover{color:var(--accent,#d4a574);border-color:var(--accent,#d4a574)}.game-grid{display:grid!important;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:16px}.game-item{background:var(--bg-1,#1a1a1a);border:1px solid var(--border-1,#2a2a2a);overflow:hidden;transition:border-color .15s,transform .15s;cursor:default}.game-item:hover{border-color:var(--accent,#d4a574);transform:translateY(-2px)}.game-item img{width:100%;aspect-ratio:16/9;object-fit:cover}.game-item .info{padding:8px 10px}.game-item .title{font-size:12px;font-weight:500;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.game-item .sub{font-size:11px;color:#666;margin-top:2px}.current-game{display:inline-flex;align-items:center;gap:6px;background:rgba(212,165,116,0.08);border:1px solid rgba(212,165,116,0.3);padding:4px 12px;font-size:12px;color:var(--accent,#d4a574);margin-top:12px}.current-game .dot{width:6px;height:6px;background:var(--accent,#d4a574);border-radius:50%;animation:pulse 2s infinite}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}`;
+const DEFAULT_PROFILE_CSS = `*{box-sizing:border-box;margin:0;padding:0}body{background:var(--bg-0,#0f0f0f);color:var(--text-0,#ddd);font-family:system-ui,-apple-system,sans-serif;font-size:14px;min-height:100vh}a{color:inherit;text-decoration:none}.card.wide{max-width:100%;border:none;border-radius:0;border:1px solid var(--border-1,#2a2a2a)}.card.wide>div:first-child{height:220px!important;border-radius:0}.card.wide>div:nth-child(2){max-width:960px;margin:0 auto;padding:0 32px 48px!important}.card.wide>div:nth-child(2)>div:first-child{margin-top:-56px!important;margin-bottom:24px!important;align-items:flex-end}.card.wide>div:nth-child(2)>div:first-child img,.card.wide>div:nth-child(2)>div:first-child>div:first-child{width:96px!important;height:96px!important;border:3px solid #0f0f0f!important;box-shadow:0 4px 24px rgba(0,0,0,.6)}.card.wide h1{font-size:22px;font-weight:600;letter-spacing:-.3px;color:#fff}.card.wide h2{font-size:13px;font-weight:400;color:#999;margin-top:2px}.card.wide>div:nth-child(2)>div:nth-child(2){background:var(--bg-1,#1a1a1a);border:1px solid var(--border-1,#2a2a2a);padding:16px 24px;gap:32px!important;margin:0 0 24px!important;display:inline-flex!important}.card.wide>div:nth-child(2)>div:nth-child(2)>div{text-align:center}.card.wide>div:nth-child(2)>div:nth-child(2) span:first-child{font-size:20px!important;font-weight:700}.tab-btn{background:transparent;border:none;border-bottom:2px solid transparent;color:#999;font-size:13px;font-weight:500;padding:8px 4px;cursor:pointer;transition:color .15s,border-color .15s}.tab-btn.active,.tab-btn:hover{color:var(--accent,#d4a574);border-color:var(--accent,#d4a574)}.game-grid{display:grid!important;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:16px}.game-item{background:var(--bg-1,#1a1a1a);border:1px solid var(--border-1,#2a2a2a);overflow:hidden;transition:border-color .15s,transform .15s;cursor:default}.game-item:hover{border-color:var(--accent,#d4a574);transform:translateY(-2px)}.game-item img{width:100%;aspect-ratio:16/9;object-fit:cover}.game-item .info{padding:8px 10px}.game-item .title{font-size:12px;font-weight:500;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.game-item .sub{font-size:11px;color:#666;margin-top:2px}.current-game{display:inline-flex;align-items:center;gap:6px;background:var(--accent-glow,rgba(212,165,116,0.08));border:1px solid var(--border-acc,rgba(212,165,116,0.3));padding:4px 12px;font-size:12px;color:var(--accent,#d4a574);margin-top:12px}.current-game .dot{width:6px;height:6px;background:var(--accent,#d4a574);border-radius:50%;animation:pulse 2s infinite}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}`;
 
 function fmtDuration(seconds: number): string {
   if (seconds < 60) return "just now";
@@ -1422,6 +1422,32 @@ export async function webRoutes(app: FastifyInstance) {
             </div>
           </form>
 
+          <h3>Create user</h3>
+          <form method="POST" action="/web/admin/user/create" style="margin-bottom:24px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div class="field">
+                <label>Username</label>
+                <input name="username" required maxlength="32" placeholder="username" style="font-family:var(--font-mono)">
+              </div>
+              <div class="field">
+                <label>Display name</label>
+                <input name="display_name" maxlength="64" placeholder="Optional">
+              </div>
+              <div class="field">
+                <label>Password</label>
+                <input name="password" type="password" required minlength="4" placeholder="••••••••">
+              </div>
+              <div class="field">
+                <label>Admin?</label>
+                <div style="display:flex;align-items:center;gap:6px;height:32px">
+                  <input type="checkbox" name="is_admin" value="1" style="width:auto">
+                  <span style="font-size:12px;color:var(--text-2)">grant admin role</span>
+                </div>
+              </div>
+            </div>
+            <button type="submit" style="width:auto;padding:8px 16px">Create user</button>
+          </form>
+
           <h3>Users (${users.length})</h3>
           <div style="overflow-x:auto">
             <table>
@@ -1494,6 +1520,25 @@ export async function webRoutes(app: FastifyInstance) {
       db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('global_accent_color', ?)").run(color);
     }
     return reply.type("text/html").send(adminPage(admin, "Global accent color updated.", "ok"));
+  });
+
+  app.post("/web/admin/user/create", { config: { rawBody: true } }, async (req: FastifyRequest<{ Body: Record<string, string> }>, reply: FastifyReply) => {
+    const admin = checkAdmin(req);
+    if (!admin) return reply.redirect("/web/dashboard");
+    const { username, display_name, password, is_admin } = req.body ?? {};
+
+    const cleanUsername = (username ?? "").replace(/[^a-zA-Z0-9_]/g, "").slice(0, 32);
+    if (!cleanUsername) return reply.type("text/html").send(adminPage(admin, "Username is required.", "err"));
+    if (!password || password.length < 4) return reply.type("text/html").send(adminPage(admin, "Password must be at least 4 characters.", "err"));
+
+    const existing = db.prepare("SELECT id FROM users WHERE username = ?").get(cleanUsername);
+    if (existing) return reply.type("text/html").send(adminPage(admin, `Username ${cleanUsername} is already taken.`, "err"));
+
+    const id = crypto.randomUUID();
+    db.prepare("INSERT INTO users (id, username, password_hash, display_name, roles) VALUES (?,?,?,?,?)")
+      .run(id, cleanUsername, hashPassword(password), (display_name ?? "").slice(0, 64) || cleanUsername, is_admin === "1" ? JSON.stringify(["admin"]) : JSON.stringify([]));
+
+    return reply.type("text/html").send(adminPage(admin, `User ${cleanUsername} created.`, "ok"));
   });
 
   app.post("/web/admin/user/role", { config: { rawBody: true } }, async (req: FastifyRequest<{ Body: Record<string, string> }>, reply: FastifyReply) => {
