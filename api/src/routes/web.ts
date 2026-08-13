@@ -5,6 +5,18 @@ import path from "node:path";
 import bcrypt from "bcryptjs";
 import { db, IMAGES_DIR, enforceInitialAdmin } from "../db";
 import { signAccess, verifyToken } from "../auth";
+import {
+  generateRegistrationOptions,
+  verifyRegistrationResponse,
+} from "@simplewebauthn/server";
+import type {
+  AuthenticatorTransportFuture,
+  RegistrationResponseJSON,
+} from "@simplewebauthn/types";
+
+const RP_NAME = "Hydra Self-Hosted";
+const RP_ID = process.env.WEBAUTHN_RP_ID ?? "localhost";
+const ORIGIN = process.env.WEBAUTHN_ORIGIN ?? `http://localhost:${process.env.PORT ?? "3000"}`;
 import { syncSteamGames } from "../steam-sync";
 
 interface DbUser {
@@ -1123,73 +1135,88 @@ export async function webRoutes(app: FastifyInstance) {
     return reply.type("text/html").send(dashboardPage(user, games, "Global accent color updated.", "ok"));
   });
 
-  // Passkey web routes (use cookie auth for web dashboard)
+  // Passkey web routes (cookie auth — call logic directly, no self-fetch)
   app.post("/web/passkeys/register/options", async (req: FastifyRequest, reply: FastifyReply) => {
     const user = getUserFromCookie(req);
     if (!user) return reply.code(401).send({ error: "unauthorized" });
-    const token = (req as any).cookies?.["web_token"];
-    const host = req.headers.host ?? "localhost:3000";
-    const proto = req.headers["x-forwarded-proto"] ?? "http";
     try {
-      const res = await fetch(`${proto}://${host}/passkeys/register/options`, {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${token}` },
+      const existingPasskeys = db.prepare("SELECT credential_id FROM passkeys WHERE user_id = ?").all(user.id) as { credential_id: string }[];
+      const options = await generateRegistrationOptions({
+        rpName: RP_NAME,
+        rpID: RP_ID,
+        userName: user.username,
+        attestationType: "none",
+        excludeCredentials: existingPasskeys.map(pk => ({
+          id: pk.credential_id,
+          transports: ["internal"] as AuthenticatorTransportFuture[],
+        })),
+        authenticatorSelection: {
+          residentKey: "preferred",
+          userVerification: "preferred",
+        },
       });
-      return reply.code(res.status).send(await res.json());
-    } catch {
-      return reply.code(500).send({ error: "passkey service unavailable" });
+      (req as any).server.passkeyChallenge = options.challenge;
+      (req as any).server.passkeyUserId = user.id;
+      return options;
+    } catch (err: any) {
+      return reply.code(400).send({ error: err.message ?? "failed to generate options" });
     }
   });
 
   app.post("/web/passkeys/register/verify", async (req: FastifyRequest, reply: FastifyReply) => {
     const user = getUserFromCookie(req);
     if (!user) return reply.code(401).send({ error: "unauthorized" });
-    const token = (req as any).cookies?.["web_token"];
-    const host = req.headers.host ?? "localhost:3000";
-    const proto = req.headers["x-forwarded-proto"] ?? "http";
+    const challenge = (req as any).server.passkeyChallenge;
+    if (!challenge) return reply.code(400).send({ error: "no challenge — start registration first" });
+    const body = req.body as Record<string, any>;
+    const label = body.label as string | undefined;
+    const registrationResponse = body as RegistrationResponseJSON;
     try {
-      const res = await fetch(`${proto}://${host}/passkeys/register/verify`, {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify(req.body),
+      const verification = await verifyRegistrationResponse({
+        response: registrationResponse,
+        expectedChallenge: challenge,
+        expectedOrigin: ORIGIN,
+        expectedRPID: RP_ID,
       });
-      return reply.code(res.status).send(await res.json());
-    } catch {
-      return reply.code(500).send({ error: "passkey service unavailable" });
+      if (!verification.verified || !verification.registrationInfo) {
+        return reply.code(400).send({ error: "verification failed" });
+      }
+      const regInfo = verification.registrationInfo;
+      const id = crypto.randomUUID();
+      db.prepare(
+        "INSERT INTO passkeys (id, user_id, credential_id, public_key, counter, transports, label) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      ).run(
+        id, user.id, regInfo.credentialID,
+        Buffer.from(regInfo.credentialPublicKey).toString("base64"),
+        regInfo.counter,
+        JSON.stringify(registrationResponse.response?.transports ?? []),
+        label ?? `${regInfo.credentialDeviceType}${regInfo.credentialBackedUp ? " (backed up)" : ""}`
+      );
+      (req as any).server.passkeyChallenge = null;
+      return { verified: true, passkeyId: id };
+    } catch (err: any) {
+      return reply.code(400).send({ error: err.message ?? "verification failed" });
     }
   });
 
   app.get("/web/passkeys/list", async (req: FastifyRequest, reply: FastifyReply) => {
     const user = getUserFromCookie(req);
     if (!user) return reply.code(401).send({ error: "unauthorized" });
-    const token = (req as any).cookies?.["web_token"];
-    const host = req.headers.host ?? "localhost:3000";
-    const proto = req.headers["x-forwarded-proto"] ?? "http";
-    try {
-      const res = await fetch(`${proto}://${host}/passkeys`, {
-        headers: { "Authorization": `Bearer ${token}` },
-      });
-      return reply.code(res.status).send(await res.json());
-    } catch {
-      return reply.code(500).send({ error: "passkey service unavailable" });
-    }
+    const passkeys = db.prepare("SELECT id, label, created_at FROM passkeys WHERE user_id = ? ORDER BY created_at DESC").all(user.id) as { id: string; label: string; created_at: number }[];
+    return passkeys.map(pk => ({
+      id: pk.id,
+      label: pk.label,
+      createdAt: new Date(pk.created_at * 1000).toISOString(),
+    }));
   });
 
   app.delete("/web/passkeys/:id", async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
     const user = getUserFromCookie(req);
     if (!user) return reply.code(401).send({ error: "unauthorized" });
-    const token = (req as any).cookies?.["web_token"];
-    const host = req.headers.host ?? "localhost:3000";
-    const proto = req.headers["x-forwarded-proto"] ?? "http";
-    try {
-      const res = await fetch(`${proto}://${host}/passkeys/${req.params.id}`, {
-        method: "DELETE",
-        headers: { "Authorization": `Bearer ${token}` },
-      });
-      return reply.code(res.status).send(await res.json());
-    } catch {
-      return reply.code(500).send({ error: "passkey service unavailable" });
-    }
+    const pk = db.prepare("SELECT id FROM passkeys WHERE id = ? AND user_id = ?").get(req.params.id, user.id);
+    if (!pk) return reply.code(404).send({ error: "not found" });
+    db.prepare("DELETE FROM passkeys WHERE id = ?").run(req.params.id);
+    return { ok: true };
   });
 
   // ─── ADMIN ────────────────────────────────────────────────────────────
