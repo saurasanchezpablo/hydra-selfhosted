@@ -799,7 +799,7 @@ function passkeyLoginPage(launcher = false) {
     </div>
     <script>
       const LAUNCHER_PROTOCOL = "hydra-self-hosted://";
-      function toB64Url(bytes){let s='';for(const b of bytes)s+=String.fromCharCode(b);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
+      function toB64Url(bytes){let s='';for(const b of bytes)s+=String.fromCharCode(b);return btoa(s).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'');}
       function fromB64Url(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';const bin=atob(s);const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return u;}
       async function startPasskeyLogin() {
         const btn = document.getElementById("passkey-btn");
