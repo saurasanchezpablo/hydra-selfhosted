@@ -1,139 +1,319 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import crypto from "node:crypto";
+import path from "node:path";
 import { db } from "../db";
 import { requireAuth } from "./auth";
 
-interface DbUser { id: string; username: string; display_name: string; profile_image_url: string | null; }
-interface DbFriendship { id: string; requester_id: string; addressee_id: string; status: string; }
+interface DbUser {
+  id: string;
+  username: string;
+  display_name: string;
+  profile_image_url: string | null;
+  background_image_url: string | null;
+}
 
-function formatFriend(user: DbUser, friendship: DbFriendship, myId: string) {
+interface DbFriendship {
+  id: string;
+  requester_id: string;
+  addressee_id: string;
+  status: string;
+  created_at: number;
+}
+
+interface DbGameRow {
+  title: string;
+  shop: string;
+  object_id: string;
+  session_started_at: number | null;
+  last_time_played: number | null;
+}
+
+// A session is considered live while the launcher has reported it recently.
+const ACTIVE_SESSION_WINDOW_SECONDS = 360;
+
+const USER_COLUMNS =
+  "id, username, display_name, profile_image_url, background_image_url";
+
+function imgUrl(req: FastifyRequest, filePath: string | null): string | null {
+  if (!filePath) return null;
+  const host = req.headers.host ?? "localhost:3000";
+  const proto = (req.headers["x-forwarded-proto"] as string) ?? "http";
+  return `${proto}://${host}/images/${path.basename(filePath)}`;
+}
+
+function getCurrentGame(userId: string) {
+  const nowTs = Math.floor(Date.now() / 1000);
+  const activeGame = db
+    .prepare(
+      `SELECT title, shop, object_id, session_started_at, last_time_played
+       FROM games
+       WHERE user_id = ? AND is_deleted = 0 AND is_hidden_from_others = 0
+         AND session_started_at IS NOT NULL AND last_time_played >= ?
+       ORDER BY last_time_played DESC LIMIT 1`
+    )
+    .get(userId, nowTs - ACTIVE_SESSION_WINDOW_SECONDS) as
+    | DbGameRow
+    | undefined;
+
+  if (!activeGame?.session_started_at) return null;
+
+  const isSteam = activeGame.shop === "steam";
+  const appId = activeGame.object_id;
+
+  return {
+    title: activeGame.title,
+    shop: activeGame.shop,
+    objectId: activeGame.object_id,
+    iconUrl: null,
+    libraryHeroImageUrl: isSteam
+      ? `https://shared.steamstatic.com/store_item_assets/steam/apps/${appId}/library_hero.jpg`
+      : null,
+    libraryImageUrl: isSteam
+      ? `https://shared.steamstatic.com/store_item_assets/steam/apps/${appId}/header.jpg`
+      : null,
+    logoImageUrl: null,
+    coverImageUrl: isSteam
+      ? `https://shared.steamstatic.com/store_item_assets/steam/apps/${appId}/library_600x900_2x.jpg`
+      : null,
+    logoPosition: null,
+    sessionDurationInSeconds: nowTs - activeGame.session_started_at,
+  };
+}
+
+/** The launcher's UserFriend shape. */
+function formatUserFriend(user: DbUser, req: FastifyRequest) {
+  const currentGame = getCurrentGame(user.id);
   return {
     id: user.id,
-    username: user.username,
-    displayName: user.display_name,
-    profileImageUrl: user.profile_image_url,
-    friendshipId: friendship.id,
-    status: friendship.status,
-    type: friendship.requester_id === myId ? "sent" : "received",
+    displayName: user.display_name || user.username,
+    profileImageUrl: imgUrl(req, user.profile_image_url),
+    backgroundImageUrl: imgUrl(req, user.background_image_url),
+    currentGame,
+    isOnline: currentGame !== null,
   };
 }
 
 export async function friendsRoutes(app: FastifyInstance) {
-  // Search users
-  app.get(
-    "/users/search",
-    { preHandler: requireAuth },
-    async (req: FastifyRequest<{ Querystring: { q?: string } }>) => {
-      const q = `%${req.query.q ?? ""}%`;
-      const users = db
-        .prepare("SELECT id, username, display_name, profile_image_url FROM users WHERE username LIKE ? OR display_name LIKE ? LIMIT 20")
-        .all(q, q) as DbUser[];
-      return users.map((u) => ({ id: u.id, username: u.username, displayName: u.display_name, profileImageUrl: u.profile_image_url }));
-    }
-  );
+  // The launcher identifies the other party by USER id, never by friendship id.
+  const findFriendship = (myId: string, otherUserId: string) =>
+    db
+      .prepare(
+        `SELECT * FROM friendships
+         WHERE (requester_id = ? AND addressee_id = ?)
+            OR (requester_id = ? AND addressee_id = ?)`
+      )
+      .get(myId, otherUserId, otherUserId, myId) as DbFriendship | undefined;
 
-  // Send friend request
-  app.post(
-    "/profile/friends/requests",
-    { preHandler: requireAuth },
-    async (req: FastifyRequest<{ Body: { userId: string } }>, reply: FastifyReply) => {
-      const myId = (req as any).userId;
-      const { userId } = req.body;
-      if (myId === userId) return reply.code(400).send({ error: "cannot add yourself" });
+  const getUser = (userId: string) =>
+    db.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`).get(userId) as
+      | DbUser
+      | undefined;
 
-      const existing = db.prepare(
-        "SELECT id FROM friendships WHERE (requester_id = ? AND addressee_id = ?) OR (requester_id = ? AND addressee_id = ?)"
-      ).get(myId, userId, userId, myId);
-      if (existing) return reply.code(409).send({ error: "already exists" });
-
-      const id = crypto.randomUUID();
-      db.prepare("INSERT INTO friendships (id, requester_id, addressee_id) VALUES (?, ?, ?)").run(id, myId, userId);
-      return { id };
-    }
-  );
-
-  // List friends / requests
+  // GET /profile/friends -> ProfileFriends
   app.get(
     "/profile/friends",
     { preHandler: requireAuth },
-    async (req: FastifyRequest<{ Querystring: { take?: string; skip?: string } }>) => {
+    async (
+      req: FastifyRequest<{ Querystring: { take?: string; skip?: string } }>
+    ) => {
       const myId = (req as any).userId;
-      const friendships = db.prepare(
-        "SELECT * FROM friendships WHERE (requester_id = ? OR addressee_id = ?) AND status = 'accepted'"
-      ).all(myId, myId) as DbFriendship[];
+      const take = parseInt(req.query.take ?? "24", 10);
+      const skip = parseInt(req.query.skip ?? "0", 10);
 
-      const results = friendships.map((f) => {
-        const otherId = f.requester_id === myId ? f.addressee_id : f.requester_id;
-        const user = db.prepare("SELECT * FROM users WHERE id = ?").get(otherId) as DbUser;
-        return user ? formatFriend(user, f, myId) : null;
-      }).filter(Boolean);
+      const friendships = db
+        .prepare(
+          `SELECT * FROM friendships
+           WHERE (requester_id = ? OR addressee_id = ?) AND status = 'accepted'
+           ORDER BY created_at DESC`
+        )
+        .all(myId, myId) as DbFriendship[];
 
-      return { results, total: results.length };
+      const friends = friendships
+        .map((friendship) => {
+          const otherId =
+            friendship.requester_id === myId
+              ? friendship.addressee_id
+              : friendship.requester_id;
+          const user = getUser(otherId);
+          return user ? formatUserFriend(user, req) : null;
+        })
+        .filter((friend): friend is NonNullable<typeof friend> => friend !== null);
+
+      return {
+        totalFriends: friends.length,
+        onlineFriends: friends.filter((friend) => friend.isOnline).length,
+        friends: friends.slice(skip, skip + take),
+      };
     }
   );
 
-  // Incoming friend requests
+  // GET /profile/friends/search -> { friends: UserFriend[] }
   app.get(
-    "/profile/friends/requests/received",
+    "/profile/friends/search",
+    { preHandler: requireAuth },
+    async (
+      req: FastifyRequest<{
+        Querystring: { query?: string; take?: string; skip?: string };
+      }>
+    ) => {
+      const myId = (req as any).userId;
+      const query = (req.query.query ?? "").trim();
+      if (!query) return { friends: [] };
+
+      const take = parseInt(req.query.take ?? "24", 10);
+      const skip = parseInt(req.query.skip ?? "0", 10);
+      const like = `%${query}%`;
+
+      const users = db
+        .prepare(
+          `SELECT ${USER_COLUMNS} FROM users
+           WHERE id != ? AND is_banned = 0
+             AND (username LIKE ? OR display_name LIKE ? OR id = ?)
+           ORDER BY username LIMIT ? OFFSET ?`
+        )
+        .all(myId, like, like, query, take, skip) as DbUser[];
+
+      return { friends: users.map((user) => formatUserFriend(user, req)) };
+    }
+  );
+
+  // GET /profile/friend-requests -> FriendRequest[]
+  // `id` is the other user's id, because that is what the launcher sends back
+  // when accepting, refusing or cancelling.
+  app.get(
+    "/profile/friend-requests",
     { preHandler: requireAuth },
     async (req: FastifyRequest) => {
       const myId = (req as any).userId;
-      const friendships = db.prepare(
-        "SELECT * FROM friendships WHERE addressee_id = ? AND status = 'pending'"
-      ).all(myId) as DbFriendship[];
+      const friendships = db
+        .prepare(
+          `SELECT * FROM friendships
+           WHERE (requester_id = ? OR addressee_id = ?) AND status = 'pending'
+           ORDER BY created_at DESC`
+        )
+        .all(myId, myId) as DbFriendship[];
 
-      const results = friendships.map((f) => {
-        const user = db.prepare("SELECT * FROM users WHERE id = ?").get(f.requester_id) as DbUser;
-        return user ? formatFriend(user, f, myId) : null;
-      }).filter(Boolean);
+      return friendships
+        .map((friendship) => {
+          const isSent = friendship.requester_id === myId;
+          const otherId = isSent
+            ? friendship.addressee_id
+            : friendship.requester_id;
+          const user = getUser(otherId);
+          if (!user) return null;
 
-      return { results, total: results.length };
+          return {
+            id: user.id,
+            displayName: user.display_name || user.username,
+            profileImageUrl: imgUrl(req, user.profile_image_url),
+            type: isSent ? "SENT" : "RECEIVED",
+          };
+        })
+        .filter(Boolean);
     }
   );
 
-  // Outgoing friend requests
-  app.get(
-    "/profile/friends/requests/sent",
+  // POST /profile/friend-requests { friendCode }
+  // friendCode is a user id or a username, whichever the user typed.
+  app.post(
+    "/profile/friend-requests",
     { preHandler: requireAuth },
-    async (req: FastifyRequest) => {
+    async (
+      req: FastifyRequest<{ Body: { friendCode?: string; userId?: string } }>,
+      reply: FastifyReply
+    ) => {
       const myId = (req as any).userId;
-      const friendships = db.prepare(
-        "SELECT * FROM friendships WHERE requester_id = ? AND status = 'pending'"
-      ).all(myId) as DbFriendship[];
+      const identifier = (req.body?.friendCode ?? req.body?.userId ?? "").trim();
+      if (!identifier) {
+        return reply.code(400).send({ message: "friend-code/required" });
+      }
 
-      const results = friendships.map((f) => {
-        const user = db.prepare("SELECT * FROM users WHERE id = ?").get(f.addressee_id) as DbUser;
-        return user ? formatFriend(user, f, myId) : null;
-      }).filter(Boolean);
+      const target = db
+        .prepare(
+          `SELECT ${USER_COLUMNS} FROM users WHERE (id = ? OR username = ?) AND is_banned = 0`
+        )
+        .get(identifier, identifier) as DbUser | undefined;
 
-      return { results, total: results.length };
+      if (!target) return reply.code(404).send({ message: "user/not-found" });
+      if (target.id === myId) {
+        return reply.code(400).send({ message: "friend-request/self" });
+      }
+
+      const existing = findFriendship(myId, target.id);
+      if (existing) {
+        // Accepting from the other side is the natural reading of sending a
+        // request to someone who already sent you one.
+        if (existing.status === "pending" && existing.addressee_id === myId) {
+          db.prepare(
+            "UPDATE friendships SET status = 'accepted' WHERE id = ?"
+          ).run(existing.id);
+          return { id: target.id, status: "ACCEPTED" };
+        }
+        return reply.code(409).send({ message: "friend-request/already-exists" });
+      }
+
+      db.prepare(
+        "INSERT INTO friendships (id, requester_id, addressee_id, status) VALUES (?, ?, ?, 'pending')"
+      ).run(crypto.randomUUID(), myId, target.id);
+
+      return { id: target.id, status: "PENDING" };
     }
   );
 
-  // Accept friend request
-  app.put(
-    "/profile/friends/requests/:id/accept",
+  // PATCH /profile/friend-requests/:userId { requestState: ACCEPTED | REFUSED }
+  app.patch(
+    "/profile/friend-requests/:userId",
     { preHandler: requireAuth },
-    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    async (
+      req: FastifyRequest<{
+        Params: { userId: string };
+        Body: { requestState?: string };
+      }>,
+      reply: FastifyReply
+    ) => {
       const myId = (req as any).userId;
-      const f = db.prepare("SELECT * FROM friendships WHERE id = ? AND addressee_id = ? AND status = 'pending'").get(req.params.id, myId);
-      if (!f) return reply.code(404).send({ error: "not found" });
-      db.prepare("UPDATE friendships SET status = 'accepted' WHERE id = ?").run(req.params.id);
-      return {};
+      const friendship = findFriendship(myId, req.params.userId);
+
+      if (!friendship || friendship.status !== "pending") {
+        return reply.code(404).send({ message: "friend-request/not-found" });
+      }
+      // Only the addressee may answer a request.
+      if (friendship.addressee_id !== myId) {
+        return reply.code(403).send({ message: "friend-request/not-addressee" });
+      }
+
+      if (req.body?.requestState === "ACCEPTED") {
+        db.prepare("UPDATE friendships SET status = 'accepted' WHERE id = ?").run(
+          friendship.id
+        );
+        return { id: req.params.userId, status: "ACCEPTED" };
+      }
+
+      if (req.body?.requestState === "REFUSED") {
+        db.prepare("DELETE FROM friendships WHERE id = ?").run(friendship.id);
+        return { id: req.params.userId, status: "REFUSED" };
+      }
+
+      return reply.code(400).send({ message: "friend-request/invalid-state" });
     }
   );
 
-  // Refuse/remove friend
+  // DELETE /profile/friend-requests/:userId
+  // Cancels a sent request, or removes an existing friendship.
   app.delete(
-    "/profile/friends/:id",
+    "/profile/friend-requests/:userId",
     { preHandler: requireAuth },
-    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    async (
+      req: FastifyRequest<{ Params: { userId: string } }>,
+      reply: FastifyReply
+    ) => {
       const myId = (req as any).userId;
-      const f = db.prepare(
-        "SELECT id FROM friendships WHERE id = ? AND (requester_id = ? OR addressee_id = ?)"
-      ).get(req.params.id, myId, myId);
-      if (!f) return reply.code(404).send({ error: "not found" });
-      db.prepare("DELETE FROM friendships WHERE id = ?").run(req.params.id);
+      const friendship = findFriendship(myId, req.params.userId);
+      if (!friendship) {
+        return reply.code(404).send({ message: "friend-request/not-found" });
+      }
+
+      db.prepare("DELETE FROM friendships WHERE id = ?").run(friendship.id);
       return {};
     }
   );
@@ -144,7 +324,13 @@ export async function friendsRoutes(app: FastifyInstance) {
     { preHandler: requireAuth },
     async (req: FastifyRequest) => {
       const myId = (req as any).userId;
-      const count = (db.prepare("SELECT COUNT(*) as c FROM friendships WHERE addressee_id = ? AND status = 'pending'").get(myId) as any).c;
+      const count = (
+        db
+          .prepare(
+            "SELECT COUNT(*) as c FROM friendships WHERE addressee_id = ? AND status = 'pending'"
+          )
+          .get(myId) as { c: number }
+      ).c;
       return { count };
     }
   );

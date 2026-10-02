@@ -38,10 +38,13 @@ async function imagesRoutes(app) {
         const filePath = node_path_1.default.join(db_1.IMAGES_DIR, req.params.filename);
         await node_fs_1.default.promises.writeFile(filePath, req.body);
         const { type, userId } = req.query;
+        // Only the two profile image kinds may rewrite a user column. Any other
+        // presigned type is stored but must not silently replace the avatar or
+        // banner — achievement souvenirs used to land in the `else` branch.
         if (type === "profile-image") {
             db_1.db.prepare("UPDATE users SET profile_image_url = ? WHERE id = ?").run(`/images/${req.params.filename}`, userId);
         }
-        else {
+        else if (type === "background-image") {
             db_1.db.prepare("UPDATE users SET background_image_url = ? WHERE id = ?").run(`/images/${req.params.filename}`, userId);
         }
         return {};

@@ -6,10 +6,12 @@ const DATA_DIR = process.env.DATA_DIR ?? "/data";
 export const ARTIFACTS_DIR = path.join(DATA_DIR, "artifacts");
 export const IMAGES_DIR = path.join(DATA_DIR, "images");
 export const CLOUD_SAVES_DIR = path.join(DATA_DIR, "cloud-saves");
+export const SOUVENIRS_DIR = path.join(DATA_DIR, "souvenirs");
 
 fs.mkdirSync(ARTIFACTS_DIR, { recursive: true });
 fs.mkdirSync(IMAGES_DIR, { recursive: true });
 fs.mkdirSync(CLOUD_SAVES_DIR, { recursive: true });
+fs.mkdirSync(SOUVENIRS_DIR, { recursive: true });
 
 export const db = new Database(path.join(DATA_DIR, "hydra.db"));
 
@@ -144,6 +146,27 @@ try { db.exec(`ALTER TABLE users ADD COLUMN is_banned INTEGER NOT NULL DEFAULT 0
 //   is_hidden_from_others -> hidden from the public profile
 try { db.exec(`ALTER TABLE games ADD COLUMN is_concealed INTEGER NOT NULL DEFAULT 0`); } catch {}
 try { db.exec(`ALTER TABLE games ADD COLUMN is_hidden_from_others INTEGER NOT NULL DEFAULT 0`); } catch {}
+
+// Achievement souvenirs (launcher >= 4.1.4): a screenshot captured when one or
+// more achievements unlock. The image key is also stamped on each achievement
+// the souvenir covers, which is how the launcher reads it back.
+try { db.exec(`ALTER TABLE achievements ADD COLUMN image_key TEXT`); } catch {}
+db.exec(`
+  CREATE TABLE IF NOT EXISTS achievement_souvenirs (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    object_id TEXT NOT NULL,
+    shop TEXT NOT NULL,
+    client_id TEXT NOT NULL,
+    image_key TEXT NOT NULL,
+    captured_at INTEGER NOT NULL,
+    achievement_names TEXT NOT NULL DEFAULT '[]',
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    UNIQUE(user_id, client_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_achievement_souvenirs_game
+    ON achievement_souvenirs (user_id, shop, object_id);
+`);
 
 // Cloud Saves v2 tables
 db.exec(`

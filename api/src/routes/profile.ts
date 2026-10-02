@@ -2,6 +2,10 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import crypto from "node:crypto";
 import { db } from "../db";
 import { requireAuth } from "./auth";
+import {
+  persistAchievementSouvenirs,
+  type IncomingSouvenir,
+} from "./achievement-souvenirs";
 
 type Req = FastifyRequest & { userId: string };
 
@@ -584,7 +588,11 @@ export async function profileRoutes(app: FastifyInstance) {
     { preHandler: requireAuth },
     async (req: FastifyRequest) => {
       const userId = (req as Req).userId;
-      const { id: remoteId, achievements } = req.body as { id: string; achievements: Array<{ name: string; unlockTime: number }> };
+      const { id: remoteId, achievements, souvenirs } = req.body as {
+        id: string;
+        achievements: Array<{ name: string; unlockTime: number }>;
+        souvenirs?: IncomingSouvenir[];
+      };
 
       const game = db.prepare("SELECT * FROM games WHERE id = ? AND user_id = ?").get(remoteId, userId) as DbGame | undefined;
       if (!game) return {};
@@ -601,6 +609,12 @@ export async function profileRoutes(app: FastifyInstance) {
         }
       });
       tx(achievements ?? []);
+
+      // Souvenirs arrive with the achievements they were captured for; store
+      // them after the upsert so the image key lands on existing rows.
+      if (Array.isArray(souvenirs) && souvenirs.length > 0) {
+        persistAchievementSouvenirs(userId, game.shop, game.object_id, souvenirs);
+      }
 
       const count = (db.prepare("SELECT COUNT(*) as cnt FROM achievements WHERE user_id = ? AND object_id = ? AND shop = ?")
         .get(userId, game.object_id, game.shop) as any)?.cnt ?? 0;

@@ -7,6 +7,7 @@ exports.profileRoutes = profileRoutes;
 const node_crypto_1 = __importDefault(require("node:crypto"));
 const db_1 = require("../db");
 const auth_1 = require("./auth");
+const achievement_souvenirs_1 = require("./achievement-souvenirs");
 function imgUrl(req, filePath) {
     if (!filePath)
         return null;
@@ -319,7 +320,7 @@ async function profileRoutes(app) {
     });
     app.put("/profile/games/achievements", { preHandler: auth_1.requireAuth }, async (req) => {
         const userId = req.userId;
-        const { id: remoteId, achievements } = req.body;
+        const { id: remoteId, achievements, souvenirs } = req.body;
         const game = db_1.db.prepare("SELECT * FROM games WHERE id = ? AND user_id = ?").get(remoteId, userId);
         if (!game)
             return {};
@@ -334,6 +335,11 @@ async function profileRoutes(app) {
             }
         });
         tx(achievements ?? []);
+        // Souvenirs arrive with the achievements they were captured for; store
+        // them after the upsert so the image key lands on existing rows.
+        if (Array.isArray(souvenirs) && souvenirs.length > 0) {
+            (0, achievement_souvenirs_1.persistAchievementSouvenirs)(userId, game.shop, game.object_id, souvenirs);
+        }
         const count = db_1.db.prepare("SELECT COUNT(*) as cnt FROM achievements WHERE user_id = ? AND object_id = ? AND shop = ?")
             .get(userId, game.object_id, game.shop)?.cnt ?? 0;
         void count;

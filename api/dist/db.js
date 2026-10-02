@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.db = exports.CLOUD_SAVES_DIR = exports.IMAGES_DIR = exports.ARTIFACTS_DIR = void 0;
+exports.db = exports.SOUVENIRS_DIR = exports.CLOUD_SAVES_DIR = exports.IMAGES_DIR = exports.ARTIFACTS_DIR = void 0;
 exports.enforceInitialAdmin = enforceInitialAdmin;
 const better_sqlite3_1 = __importDefault(require("better-sqlite3"));
 const node_path_1 = __importDefault(require("node:path"));
@@ -12,9 +12,11 @@ const DATA_DIR = process.env.DATA_DIR ?? "/data";
 exports.ARTIFACTS_DIR = node_path_1.default.join(DATA_DIR, "artifacts");
 exports.IMAGES_DIR = node_path_1.default.join(DATA_DIR, "images");
 exports.CLOUD_SAVES_DIR = node_path_1.default.join(DATA_DIR, "cloud-saves");
+exports.SOUVENIRS_DIR = node_path_1.default.join(DATA_DIR, "souvenirs");
 node_fs_1.default.mkdirSync(exports.ARTIFACTS_DIR, { recursive: true });
 node_fs_1.default.mkdirSync(exports.IMAGES_DIR, { recursive: true });
 node_fs_1.default.mkdirSync(exports.CLOUD_SAVES_DIR, { recursive: true });
+node_fs_1.default.mkdirSync(exports.SOUVENIRS_DIR, { recursive: true });
 exports.db = new better_sqlite3_1.default(node_path_1.default.join(DATA_DIR, "hydra.db"));
 exports.db.pragma("journal_mode = WAL");
 exports.db.pragma("foreign_keys = ON");
@@ -185,6 +187,29 @@ try {
     exports.db.exec(`ALTER TABLE games ADD COLUMN is_hidden_from_others INTEGER NOT NULL DEFAULT 0`);
 }
 catch { }
+// Achievement souvenirs (launcher >= 4.1.4): a screenshot captured when one or
+// more achievements unlock. The image key is also stamped on each achievement
+// the souvenir covers, which is how the launcher reads it back.
+try {
+    exports.db.exec(`ALTER TABLE achievements ADD COLUMN image_key TEXT`);
+}
+catch { }
+exports.db.exec(`
+  CREATE TABLE IF NOT EXISTS achievement_souvenirs (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    object_id TEXT NOT NULL,
+    shop TEXT NOT NULL,
+    client_id TEXT NOT NULL,
+    image_key TEXT NOT NULL,
+    captured_at INTEGER NOT NULL,
+    achievement_names TEXT NOT NULL DEFAULT '[]',
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    UNIQUE(user_id, client_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_achievement_souvenirs_game
+    ON achievement_souvenirs (user_id, shop, object_id);
+`);
 // Cloud Saves v2 tables
 exports.db.exec(`
   CREATE TABLE IF NOT EXISTS cs_snapshots (

@@ -23,6 +23,8 @@ Run your own server for cloud saves, accounts, profiles, and game data — no Hy
 - **Playtime tracking** — accurate playtime recorded per game and shown on profile
 - **Recent activity** — last played games shown per tab (Hydra / Steam) with configurable visibility and section order
 - **Game visibility** (launcher 4.1.4+) — conceal a game from your own library (it moves to the launcher's hidden library) or hide it from your public profile
+- **Achievement souvenirs** (launcher 4.1.4+) — the screenshot taken when an achievement unlocks is uploaded to your server and shown next to that achievement
+- **Friends** — search users, send/accept/refuse friend requests, and see which friends are in a game right now
 
 ### Web dashboard
 
@@ -111,6 +113,17 @@ data/
   images/         # uploaded avatars and banners
   artifacts/      # cloud save archives
 ```
+
+## Souvenir image size limit
+
+Achievement souvenir screenshots are capped at **10 MB**. Change it with
+`MAX_SOUVENIR_SIZE_MB` in your `.env`:
+
+```env
+MAX_SOUVENIR_SIZE_MB=20
+```
+
+Souvenir images are stored in `data/souvenirs/`.
 
 ## Cloud save size limit
 

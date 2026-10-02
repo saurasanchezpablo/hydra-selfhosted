@@ -56,9 +56,12 @@ export async function imagesRoutes(app: FastifyInstance) {
       await fs.promises.writeFile(filePath, req.body as Buffer);
 
       const { type, userId } = req.query;
+      // Only the two profile image kinds may rewrite a user column. Any other
+      // presigned type is stored but must not silently replace the avatar or
+      // banner — achievement souvenirs used to land in the `else` branch.
       if (type === "profile-image") {
         db.prepare("UPDATE users SET profile_image_url = ? WHERE id = ?").run(`/images/${req.params.filename}`, userId);
-      } else {
+      } else if (type === "background-image") {
         db.prepare("UPDATE users SET background_image_url = ? WHERE id = ?").run(`/images/${req.params.filename}`, userId);
       }
 
