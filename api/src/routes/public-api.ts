@@ -104,7 +104,7 @@ export async function publicApiRoutes(app: FastifyInstance) {
       .get(req.params.username) as DbUser | undefined;
     if (!user) return reply.code(404).send({ error: "User not found" });
 
-    const games = db.prepare("SELECT * FROM games WHERE user_id = ? AND is_deleted = 0")
+    const games = db.prepare("SELECT * FROM games WHERE user_id = ? AND is_deleted = 0 AND is_hidden_from_others = 0")
       .all(user.id) as DbGame[];
 
     const totalSeconds = games.reduce((s, g) => s + g.play_time_in_seconds, 0);
@@ -117,7 +117,7 @@ export async function publicApiRoutes(app: FastifyInstance) {
     if (user.steam_id) {
       try {
         const activeGame = db.prepare(
-          "SELECT * FROM games WHERE user_id = ? AND is_deleted = 0 AND session_started_at IS NOT NULL AND last_time_played >= ? ORDER BY last_time_played DESC LIMIT 1"
+          "SELECT * FROM games WHERE user_id = ? AND is_deleted = 0 AND is_hidden_from_others = 0 AND session_started_at IS NOT NULL AND last_time_played >= ? ORDER BY last_time_played DESC LIMIT 1"
         ).get(user.id, nowTs - 360) as DbGame | undefined;
         if (activeGame) {
           currentGame = {
@@ -158,7 +158,7 @@ export async function publicApiRoutes(app: FastifyInstance) {
 
     const stats = db.prepare(`
       SELECT COUNT(*) as totalGames, SUM(play_time_in_seconds) as totalPlayTime
-      FROM games WHERE user_id = ? AND is_deleted = 0
+      FROM games WHERE user_id = ? AND is_deleted = 0 AND is_hidden_from_others = 0
     `).get(user.id) as any;
 
     const achievements = db.prepare(`
@@ -167,7 +167,7 @@ export async function publicApiRoutes(app: FastifyInstance) {
 
     const byShop = db.prepare(`
       SELECT shop, COUNT(*) as count, SUM(play_time_in_seconds) as playtime
-      FROM games WHERE user_id = ? AND is_deleted = 0 GROUP BY shop
+      FROM games WHERE user_id = ? AND is_deleted = 0 AND is_hidden_from_others = 0 GROUP BY shop
     `).all(user.id) as any[];
 
     return reply.send({
@@ -194,15 +194,15 @@ export async function publicApiRoutes(app: FastifyInstance) {
     const shopFilter = req.query.shop && ["steam", "hydra"].includes(req.query.shop) ? req.query.shop : null;
 
     const query = shopFilter
-      ? `SELECT * FROM games WHERE user_id = ? AND is_deleted = 0 AND shop = ? ORDER BY is_pinned DESC, ${sortBy} LIMIT ? OFFSET ?`
-      : `SELECT * FROM games WHERE user_id = ? AND is_deleted = 0 ORDER BY is_pinned DESC, ${sortBy} LIMIT ? OFFSET ?`;
+      ? `SELECT * FROM games WHERE user_id = ? AND is_deleted = 0 AND is_hidden_from_others = 0 AND shop = ? ORDER BY is_pinned DESC, ${sortBy} LIMIT ? OFFSET ?`
+      : `SELECT * FROM games WHERE user_id = ? AND is_deleted = 0 AND is_hidden_from_others = 0 ORDER BY is_pinned DESC, ${sortBy} LIMIT ? OFFSET ?`;
     const games = shopFilter
       ? db.prepare(query).all(user.id, shopFilter, take, skip) as DbGame[]
       : db.prepare(query).all(user.id, take, skip) as DbGame[];
 
     const totalQuery = shopFilter
-      ? "SELECT COUNT(*) as c FROM games WHERE user_id = ? AND is_deleted = 0 AND shop = ?"
-      : "SELECT COUNT(*) as c FROM games WHERE user_id = ? AND is_deleted = 0";
+      ? "SELECT COUNT(*) as c FROM games WHERE user_id = ? AND is_deleted = 0 AND is_hidden_from_others = 0 AND shop = ?"
+      : "SELECT COUNT(*) as c FROM games WHERE user_id = ? AND is_deleted = 0 AND is_hidden_from_others = 0";
     const total = (shopFilter
       ? db.prepare(totalQuery).get(user.id, shopFilter) as any
       : db.prepare(totalQuery).get(user.id) as any
@@ -229,7 +229,7 @@ export async function publicApiRoutes(app: FastifyInstance) {
     const take = Math.min(parseInt(req.query.take ?? "30", 10), 100);
 
     const games = db.prepare(
-      "SELECT * FROM games WHERE user_id = ? AND is_deleted = 0 ORDER BY is_pinned DESC, title ASC LIMIT ? OFFSET ?"
+      "SELECT * FROM games WHERE user_id = ? AND is_deleted = 0 AND is_hidden_from_others = 0 ORDER BY is_pinned DESC, title ASC LIMIT ? OFFSET ?"
     ).all(user.id, take, skip) as DbGame[];
 
     return reply.send(games.map(formatGame));

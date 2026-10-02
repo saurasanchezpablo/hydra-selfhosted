@@ -104,7 +104,7 @@ async function publicApiRoutes(app) {
             .get(req.params.username);
         if (!user)
             return reply.code(404).send({ error: "User not found" });
-        const games = db_1.db.prepare("SELECT * FROM games WHERE user_id = ? AND is_deleted = 0")
+        const games = db_1.db.prepare("SELECT * FROM games WHERE user_id = ? AND is_deleted = 0 AND is_hidden_from_others = 0")
             .all(user.id);
         const totalSeconds = games.reduce((s, g) => s + g.play_time_in_seconds, 0);
         const steamGames = games.filter(g => g.shop === "steam");
@@ -113,7 +113,7 @@ async function publicApiRoutes(app) {
         let currentGame = null;
         if (user.steam_id) {
             try {
-                const activeGame = db_1.db.prepare("SELECT * FROM games WHERE user_id = ? AND is_deleted = 0 AND session_started_at IS NOT NULL AND last_time_played >= ? ORDER BY last_time_played DESC LIMIT 1").get(user.id, nowTs - 360);
+                const activeGame = db_1.db.prepare("SELECT * FROM games WHERE user_id = ? AND is_deleted = 0 AND is_hidden_from_others = 0 AND session_started_at IS NOT NULL AND last_time_played >= ? ORDER BY last_time_played DESC LIMIT 1").get(user.id, nowTs - 360);
                 if (activeGame) {
                     currentGame = {
                         title: activeGame.title,
@@ -149,14 +149,14 @@ async function publicApiRoutes(app) {
             return reply.code(404).send({ error: "User not found" });
         const stats = db_1.db.prepare(`
       SELECT COUNT(*) as totalGames, SUM(play_time_in_seconds) as totalPlayTime
-      FROM games WHERE user_id = ? AND is_deleted = 0
+      FROM games WHERE user_id = ? AND is_deleted = 0 AND is_hidden_from_others = 0
     `).get(user.id);
         const achievements = db_1.db.prepare(`
       SELECT COUNT(*) as count FROM achievements WHERE user_id = ?
     `).get(user.id);
         const byShop = db_1.db.prepare(`
       SELECT shop, COUNT(*) as count, SUM(play_time_in_seconds) as playtime
-      FROM games WHERE user_id = ? AND is_deleted = 0 GROUP BY shop
+      FROM games WHERE user_id = ? AND is_deleted = 0 AND is_hidden_from_others = 0 GROUP BY shop
     `).all(user.id);
         return reply.send({
             totalGames: stats?.totalGames ?? 0,
@@ -177,14 +177,14 @@ async function publicApiRoutes(app) {
         const sortBy = req.query.sortBy === "playedRecently" ? "last_time_played DESC NULLS LAST" : "title ASC";
         const shopFilter = req.query.shop && ["steam", "hydra"].includes(req.query.shop) ? req.query.shop : null;
         const query = shopFilter
-            ? `SELECT * FROM games WHERE user_id = ? AND is_deleted = 0 AND shop = ? ORDER BY is_pinned DESC, ${sortBy} LIMIT ? OFFSET ?`
-            : `SELECT * FROM games WHERE user_id = ? AND is_deleted = 0 ORDER BY is_pinned DESC, ${sortBy} LIMIT ? OFFSET ?`;
+            ? `SELECT * FROM games WHERE user_id = ? AND is_deleted = 0 AND is_hidden_from_others = 0 AND shop = ? ORDER BY is_pinned DESC, ${sortBy} LIMIT ? OFFSET ?`
+            : `SELECT * FROM games WHERE user_id = ? AND is_deleted = 0 AND is_hidden_from_others = 0 ORDER BY is_pinned DESC, ${sortBy} LIMIT ? OFFSET ?`;
         const games = shopFilter
             ? db_1.db.prepare(query).all(user.id, shopFilter, take, skip)
             : db_1.db.prepare(query).all(user.id, take, skip);
         const totalQuery = shopFilter
-            ? "SELECT COUNT(*) as c FROM games WHERE user_id = ? AND is_deleted = 0 AND shop = ?"
-            : "SELECT COUNT(*) as c FROM games WHERE user_id = ? AND is_deleted = 0";
+            ? "SELECT COUNT(*) as c FROM games WHERE user_id = ? AND is_deleted = 0 AND is_hidden_from_others = 0 AND shop = ?"
+            : "SELECT COUNT(*) as c FROM games WHERE user_id = ? AND is_deleted = 0 AND is_hidden_from_others = 0";
         const total = (shopFilter
             ? db_1.db.prepare(totalQuery).get(user.id, shopFilter)
             : db_1.db.prepare(totalQuery).get(user.id)).c;
@@ -203,7 +203,7 @@ async function publicApiRoutes(app) {
             return reply.code(404).send({ error: "User not found" });
         const skip = parseInt(req.query.skip ?? "0", 10);
         const take = Math.min(parseInt(req.query.take ?? "30", 10), 100);
-        const games = db_1.db.prepare("SELECT * FROM games WHERE user_id = ? AND is_deleted = 0 ORDER BY is_pinned DESC, title ASC LIMIT ? OFFSET ?").all(user.id, take, skip);
+        const games = db_1.db.prepare("SELECT * FROM games WHERE user_id = ? AND is_deleted = 0 AND is_hidden_from_others = 0 ORDER BY is_pinned DESC, title ASC LIMIT ? OFFSET ?").all(user.id, take, skip);
         return reply.send(games.map(formatGame));
     });
     // GET /api/games/:shop/:objectId/achievements

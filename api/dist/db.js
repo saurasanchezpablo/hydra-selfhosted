@@ -18,61 +18,6 @@ node_fs_1.default.mkdirSync(exports.CLOUD_SAVES_DIR, { recursive: true });
 exports.db = new better_sqlite3_1.default(node_path_1.default.join(DATA_DIR, "hydra.db"));
 exports.db.pragma("journal_mode = WAL");
 exports.db.pragma("foreign_keys = ON");
-// Migrations for existing databases
-for (const col of ["steam_id", "steam_api_key", "accent_color", "custom_css"]) {
-    try {
-        exports.db.exec(`ALTER TABLE users ADD COLUMN ${col} TEXT`);
-    }
-    catch { }
-}
-try {
-    exports.db.exec(`ALTER TABLE games ADD COLUMN executable_path TEXT`);
-}
-catch { }
-try {
-    exports.db.exec(`ALTER TABLE games ADD COLUMN pinned_at INTEGER`);
-}
-catch { }
-try {
-    exports.db.exec(`ALTER TABLE games ADD COLUMN source TEXT NOT NULL DEFAULT 'launcher'`);
-}
-catch { }
-try {
-    exports.db.exec(`CREATE TABLE IF NOT EXISTS collections (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES users(id),
-    name TEXT NOT NULL,
-    position INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    UNIQUE(user_id, name)
-  )`);
-}
-catch { }
-try {
-    exports.db.exec(`ALTER TABLE users ADD COLUMN show_recent_activity INTEGER NOT NULL DEFAULT 1`);
-}
-catch { }
-try {
-    exports.db.exec(`ALTER TABLE users ADD COLUMN show_library INTEGER NOT NULL DEFAULT 1`);
-}
-catch { }
-try {
-    exports.db.exec(`ALTER TABLE users ADD COLUMN profile_sections_order TEXT`);
-}
-catch { }
-try {
-    exports.db.exec(`ALTER TABLE games ADD COLUMN session_started_at INTEGER`);
-}
-catch { }
-// Fix image URLs stored as absolute paths
-try {
-    exports.db.exec(`UPDATE users SET profile_image_url = REPLACE(profile_image_url, '/data/images/', '/images/') WHERE profile_image_url LIKE '/data/%'`);
-}
-catch { }
-try {
-    exports.db.exec(`UPDATE users SET background_image_url = REPLACE(background_image_url, '/data/images/', '/images/') WHERE background_image_url LIKE '/data/%'`);
-}
-catch { }
 exports.db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -166,12 +111,78 @@ exports.db.exec(`
     UNIQUE(requester_id, addressee_id)
   );
 `);
+// Migrations for existing databases
+for (const col of ["steam_id", "steam_api_key", "accent_color", "custom_css"]) {
+    try {
+        exports.db.exec(`ALTER TABLE users ADD COLUMN ${col} TEXT`);
+    }
+    catch { }
+}
+try {
+    exports.db.exec(`ALTER TABLE games ADD COLUMN executable_path TEXT`);
+}
+catch { }
+try {
+    exports.db.exec(`ALTER TABLE games ADD COLUMN pinned_at INTEGER`);
+}
+catch { }
+try {
+    exports.db.exec(`ALTER TABLE games ADD COLUMN source TEXT NOT NULL DEFAULT 'launcher'`);
+}
+catch { }
+try {
+    exports.db.exec(`CREATE TABLE IF NOT EXISTS collections (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    name TEXT NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    UNIQUE(user_id, name)
+  )`);
+}
+catch { }
+try {
+    exports.db.exec(`ALTER TABLE users ADD COLUMN show_recent_activity INTEGER NOT NULL DEFAULT 1`);
+}
+catch { }
+try {
+    exports.db.exec(`ALTER TABLE users ADD COLUMN show_library INTEGER NOT NULL DEFAULT 1`);
+}
+catch { }
+try {
+    exports.db.exec(`ALTER TABLE users ADD COLUMN profile_sections_order TEXT`);
+}
+catch { }
+try {
+    exports.db.exec(`ALTER TABLE games ADD COLUMN session_started_at INTEGER`);
+}
+catch { }
+// Fix image URLs stored as absolute paths
+try {
+    exports.db.exec(`UPDATE users SET profile_image_url = REPLACE(profile_image_url, '/data/images/', '/images/') WHERE profile_image_url LIKE '/data/%'`);
+}
+catch { }
+try {
+    exports.db.exec(`UPDATE users SET background_image_url = REPLACE(background_image_url, '/data/images/', '/images/') WHERE background_image_url LIKE '/data/%'`);
+}
+catch { }
 try {
     exports.db.exec(`ALTER TABLE users ADD COLUMN roles TEXT`);
 }
 catch { }
 try {
     exports.db.exec(`ALTER TABLE users ADD COLUMN is_banned INTEGER NOT NULL DEFAULT 0`);
+}
+catch { }
+// Game visibility (launcher >= 4.1.4):
+//   is_concealed          -> hidden from the owner's own library ("hidden library")
+//   is_hidden_from_others -> hidden from the public profile
+try {
+    exports.db.exec(`ALTER TABLE games ADD COLUMN is_concealed INTEGER NOT NULL DEFAULT 0`);
+}
+catch { }
+try {
+    exports.db.exec(`ALTER TABLE games ADD COLUMN is_hidden_from_others INTEGER NOT NULL DEFAULT 0`);
 }
 catch { }
 // Cloud Saves v2 tables
@@ -239,7 +250,6 @@ catch { }
 function enforceInitialAdmin() {
     const INITIAL_ADMIN = process.env.INITIAL_ADMIN_USERNAME;
     if (!INITIAL_ADMIN) {
-        // Fallback: make the first user admin if no admin exists
         const anyAdmin = exports.db.prepare("SELECT 1 FROM users WHERE roles LIKE '%admin%'").get();
         if (anyAdmin)
             return;

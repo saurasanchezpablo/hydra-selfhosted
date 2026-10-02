@@ -139,6 +139,12 @@ try { db.exec(`UPDATE users SET background_image_url = REPLACE(background_image_
 try { db.exec(`ALTER TABLE users ADD COLUMN roles TEXT`); } catch {}
 try { db.exec(`ALTER TABLE users ADD COLUMN is_banned INTEGER NOT NULL DEFAULT 0`); } catch {}
 
+// Game visibility (launcher >= 4.1.4):
+//   is_concealed          -> hidden from the owner's own library ("hidden library")
+//   is_hidden_from_others -> hidden from the public profile
+try { db.exec(`ALTER TABLE games ADD COLUMN is_concealed INTEGER NOT NULL DEFAULT 0`); } catch {}
+try { db.exec(`ALTER TABLE games ADD COLUMN is_hidden_from_others INTEGER NOT NULL DEFAULT 0`); } catch {}
+
 // Cloud Saves v2 tables
 db.exec(`
   CREATE TABLE IF NOT EXISTS cs_snapshots (

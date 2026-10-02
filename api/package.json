@@ -5,7 +5,9 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "tsx watch src/index.ts"
+    "dev": "tsx watch src/index.ts",
+    "test": "npm run build && npm run test:integration",
+    "test:integration": "node test/run-integration.mjs"
   },
   "dependencies": {
     "@fastify/cookie": "11.0.2",

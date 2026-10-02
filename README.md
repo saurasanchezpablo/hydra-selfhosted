@@ -22,6 +22,7 @@ Run your own server for cloud saves, accounts, profiles, and game data — no Hy
 - **Favorite games** — mark games as favorites; heart icon shown on library cards
 - **Playtime tracking** — accurate playtime recorded per game and shown on profile
 - **Recent activity** — last played games shown per tab (Hydra / Steam) with configurable visibility and section order
+- **Game visibility** (launcher 4.1.4+) — conceal a game from your own library (it moves to the launcher's hidden library) or hide it from your public profile
 
 ### Web dashboard
 
@@ -52,6 +53,20 @@ The [entitybtw/hydra](https://github.com/entitybtw/hydra) fork's Big Picture mod
 - **No subscription required** — all features work without Hydra Cloud
 - **Friendships API stub** — enough for the launcher to work without errors
 - **Download sources** — the launcher routes `/download-sources` to the official Hydra API automatically
+
+## Tests
+
+```bash
+cd api
+npm install
+npm test
+```
+
+`npm test` builds the API, starts it on a throwaway SQLite database and runs
+`test/cloud-saves.integration.mjs` against it: the full Cloud Saves v2
+round-trip (prepare → upload → commit → list → restore manifest → download,
+verifying bytes and hashes), checksum rejection, snapshot versioning and
+deletion, auth failures, and the game-visibility routes.
 
 ## Requirements
 

@@ -29,6 +29,8 @@ interface DbGame {
   is_deleted: number;
   collection_ids: string;
   session_started_at: number | null;
+  is_concealed: number;
+  is_hidden_from_others: number;
 }
 
 function imgUrl(req: any, filePath: string | null): string | null {
@@ -89,6 +91,8 @@ function formatGame(g: DbGame) {
     createdAt: null,
     executablePath: (g as any).executable_path ?? null,
     pinnedDate: (g as any).pinned_at ? new Date((g as any).pinned_at * 1000) : null,
+    isConcealed: Boolean(g.is_concealed),
+    isHiddenFromOthers: Boolean(g.is_hidden_from_others),
   };
 }
 
@@ -208,20 +212,118 @@ export async function profileRoutes(app: FastifyInstance) {
     }
   );
 
+  // The launcher reads its library as two disjoint collections: the visible one
+  // from /profile/games and the concealed one from /profile/games/hidden. A game
+  // must appear in exactly one of them, or the launcher will treat the missing
+  // side as removed.
+  const listGames = (
+    userId: string,
+    concealed: boolean,
+    query: { skip?: string; take?: string; shop?: string }
+  ) => {
+    const skip = parseInt(query.skip ?? "0", 10);
+    const take = parseInt(query.take ?? "30", 10);
+    const conditions = [
+      "user_id = ?",
+      "is_deleted = 0",
+      `is_concealed = ${concealed ? 1 : 0}`,
+    ];
+    const params: unknown[] = [userId];
+
+    if (query.shop) {
+      conditions.push("shop = ?");
+      params.push(query.shop);
+    } else {
+      // Without a shop filter the launcher asks for its PC library, which must
+      // not also return the classics it fetches separately as shop=launchbox.
+      conditions.push("shop != 'launchbox'");
+    }
+
+    const games = db
+      .prepare(
+        `SELECT * FROM games WHERE ${conditions.join(" AND ")} LIMIT ? OFFSET ?`
+      )
+      .all(...params, take, skip) as DbGame[];
+
+    return games.map(formatGame);
+  };
+
   app.get(
     "/profile/games",
     { preHandler: requireAuth },
-    async (req: FastifyRequest<{ Querystring: { skip?: string; take?: string } }>) => {
-      const userId = (req as Req).userId;
-      const skip = parseInt(req.query.skip ?? "0", 10);
-      const take = parseInt(req.query.take ?? "30", 10);
-      const games = db
-        .prepare(
-          "SELECT * FROM games WHERE user_id = ? AND is_deleted = 0 LIMIT ? OFFSET ?"
-        )
-        .all(userId, take, skip) as DbGame[];
-      return games.map(formatGame);
+    async (
+      req: FastifyRequest<{
+        Querystring: { skip?: string; take?: string; shop?: string };
+      }>
+    ) => listGames((req as Req).userId, false, req.query)
+  );
+
+  app.get(
+    "/profile/games/hidden",
+    { preHandler: requireAuth },
+    async (
+      req: FastifyRequest<{
+        Querystring: { skip?: string; take?: string; shop?: string };
+      }>
+    ) => listGames((req as Req).userId, true, req.query)
+  );
+
+  // Visibility toggles. PUT sets the flag, DELETE clears it; both answer with
+  // the resulting state, which is what the launcher persists locally.
+  const setVisibilityFlag = (
+    column: "is_concealed" | "is_hidden_from_others",
+    value: boolean
+  ) => async (
+    req: FastifyRequest<{ Params: { shop: string; objectId: string } }>,
+    reply: FastifyReply
+  ) => {
+    const userId = (req as Req).userId;
+    const { shop, objectId } = req.params;
+
+    const result = db
+      .prepare(
+        `UPDATE games SET ${column} = ? WHERE user_id = ? AND object_id = ? AND shop = ? AND is_deleted = 0`
+      )
+      .run(value ? 1 : 0, userId, objectId, shop);
+
+    if (result.changes === 0) {
+      // The launcher creates the game and retries when it sees this message.
+      return reply.code(404).send({ message: "game/not-found" });
     }
+
+    const game = db
+      .prepare(
+        "SELECT is_concealed, is_hidden_from_others FROM games WHERE user_id = ? AND object_id = ? AND shop = ?"
+      )
+      .get(userId, objectId, shop) as
+      | { is_concealed: number; is_hidden_from_others: number }
+      | undefined;
+
+    return {
+      isConcealed: Boolean(game?.is_concealed),
+      isHiddenFromOthers: Boolean(game?.is_hidden_from_others),
+    };
+  };
+
+  app.put(
+    "/profile/games/:shop/:objectId/conceal",
+    { preHandler: requireAuth },
+    setVisibilityFlag("is_concealed", true)
+  );
+  app.delete(
+    "/profile/games/:shop/:objectId/conceal",
+    { preHandler: requireAuth },
+    setVisibilityFlag("is_concealed", false)
+  );
+  app.put(
+    "/profile/games/:shop/:objectId/hide",
+    { preHandler: requireAuth },
+    setVisibilityFlag("is_hidden_from_others", true)
+  );
+  app.delete(
+    "/profile/games/:shop/:objectId/hide",
+    { preHandler: requireAuth },
+    setVisibilityFlag("is_hidden_from_others", false)
   );
 
   app.put(

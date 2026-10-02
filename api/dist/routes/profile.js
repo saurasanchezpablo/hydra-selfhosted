@@ -64,6 +64,8 @@ function formatGame(g) {
         createdAt: null,
         executablePath: g.executable_path ?? null,
         pinnedDate: g.pinned_at ? new Date(g.pinned_at * 1000) : null,
+        isConcealed: Boolean(g.is_concealed),
+        isHiddenFromOthers: Boolean(g.is_hidden_from_others),
     };
 }
 async function profileRoutes(app) {
@@ -135,15 +137,59 @@ async function profileRoutes(app) {
             .get(userId, g.objectId, g.shop);
         return formatGame(game);
     });
-    app.get("/profile/games", { preHandler: auth_1.requireAuth }, async (req) => {
-        const userId = req.userId;
-        const skip = parseInt(req.query.skip ?? "0", 10);
-        const take = parseInt(req.query.take ?? "30", 10);
+    // The launcher reads its library as two disjoint collections: the visible one
+    // from /profile/games and the concealed one from /profile/games/hidden. A game
+    // must appear in exactly one of them, or the launcher will treat the missing
+    // side as removed.
+    const listGames = (userId, concealed, query) => {
+        const skip = parseInt(query.skip ?? "0", 10);
+        const take = parseInt(query.take ?? "30", 10);
+        const conditions = [
+            "user_id = ?",
+            "is_deleted = 0",
+            `is_concealed = ${concealed ? 1 : 0}`,
+        ];
+        const params = [userId];
+        if (query.shop) {
+            conditions.push("shop = ?");
+            params.push(query.shop);
+        }
+        else {
+            // Without a shop filter the launcher asks for its PC library, which must
+            // not also return the classics it fetches separately as shop=launchbox.
+            conditions.push("shop != 'launchbox'");
+        }
         const games = db_1.db
-            .prepare("SELECT * FROM games WHERE user_id = ? AND is_deleted = 0 LIMIT ? OFFSET ?")
-            .all(userId, take, skip);
+            .prepare(`SELECT * FROM games WHERE ${conditions.join(" AND ")} LIMIT ? OFFSET ?`)
+            .all(...params, take, skip);
         return games.map(formatGame);
-    });
+    };
+    app.get("/profile/games", { preHandler: auth_1.requireAuth }, async (req) => listGames(req.userId, false, req.query));
+    app.get("/profile/games/hidden", { preHandler: auth_1.requireAuth }, async (req) => listGames(req.userId, true, req.query));
+    // Visibility toggles. PUT sets the flag, DELETE clears it; both answer with
+    // the resulting state, which is what the launcher persists locally.
+    const setVisibilityFlag = (column, value) => async (req, reply) => {
+        const userId = req.userId;
+        const { shop, objectId } = req.params;
+        const result = db_1.db
+            .prepare(`UPDATE games SET ${column} = ? WHERE user_id = ? AND object_id = ? AND shop = ? AND is_deleted = 0`)
+            .run(value ? 1 : 0, userId, objectId, shop);
+        if (result.changes === 0) {
+            // The launcher creates the game and retries when it sees this message.
+            return reply.code(404).send({ message: "game/not-found" });
+        }
+        const game = db_1.db
+            .prepare("SELECT is_concealed, is_hidden_from_others FROM games WHERE user_id = ? AND object_id = ? AND shop = ?")
+            .get(userId, objectId, shop);
+        return {
+            isConcealed: Boolean(game?.is_concealed),
+            isHiddenFromOthers: Boolean(game?.is_hidden_from_others),
+        };
+    };
+    app.put("/profile/games/:shop/:objectId/conceal", { preHandler: auth_1.requireAuth }, setVisibilityFlag("is_concealed", true));
+    app.delete("/profile/games/:shop/:objectId/conceal", { preHandler: auth_1.requireAuth }, setVisibilityFlag("is_concealed", false));
+    app.put("/profile/games/:shop/:objectId/hide", { preHandler: auth_1.requireAuth }, setVisibilityFlag("is_hidden_from_others", true));
+    app.delete("/profile/games/:shop/:objectId/hide", { preHandler: auth_1.requireAuth }, setVisibilityFlag("is_hidden_from_others", false));
     app.put("/profile/games/:shop/:objectId", { preHandler: auth_1.requireAuth }, async (req) => {
         const userId = req.userId;
         const { shop, objectId } = req.params;
