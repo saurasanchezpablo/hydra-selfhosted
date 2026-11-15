@@ -833,20 +833,4 @@ export async function profileRoutes(app: FastifyInstance) {
     const row = db.prepare("SELECT value FROM settings WHERE key = 'global_accent_color'").get() as { value: string } | undefined;
     return { color: row?.value ?? "#d4a574" };
   });
-
-  // Make user admin (for initial setup — only works if user has no roles yet)
-  app.post("/profile/make-admin", { preHandler: requireAuth }, async (req: FastifyRequest, reply: FastifyReply) => {
-    const { userId } = req as any;
-    const user = db.prepare("SELECT roles FROM users WHERE id = ?").get(userId) as { roles: string | null } | undefined;
-    if (user?.roles) {
-      try {
-        const roles = JSON.parse(user.roles);
-        if (Array.isArray(roles) && roles.length > 0) {
-          return reply.code(403).send({ error: "already has roles" });
-        }
-      } catch {}
-    }
-    db.prepare("UPDATE users SET roles = ? WHERE id = ?").run(JSON.stringify(["admin"]), userId);
-    return { ok: true };
-  });
 }
